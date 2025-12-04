@@ -5,7 +5,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Install OS deps needed by Prisma & Next
-RUN apk add --no-cache libc6-compat python3 make g++ openssl1.1-compat
+RUN apk add --no-cache libc6-compat python3 make g++ openssl
 
 FROM base AS deps
 COPY package.json package-lock.json* ./
