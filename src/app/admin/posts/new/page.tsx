@@ -25,7 +25,7 @@ const postSchema = z.object({
   published: z.boolean().default(false),
 });
 
-type PostFormData = z.infer<typeof postSchema>;
+type PostFormData = z.input<typeof postSchema>;
 
 export default function NewPostPage() {
   const router = useRouter();

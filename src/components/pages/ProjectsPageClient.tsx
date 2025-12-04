@@ -10,7 +10,7 @@ import Badge from '~/components/ui/Badge';
 import Loading from '~/components/ui/Loading';
 
 interface ProjectItem {
-  id: string;
+  id: string | number;
   title: string;
   description: string;
   images: string[];

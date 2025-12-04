@@ -81,6 +81,10 @@ AUTH_SECRET="your-auth-secret-here"
 AUTH_GITHUB_ID="your-github-client-id"
 AUTH_GITHUB_SECRET="your-github-client-secret"
 
+# If you're migrating from NextAuth v4 you can keep NEXTAUTH_SECRET;
+# the app will treat it the same as AUTH_SECRET.
+# NEXTAUTH_SECRET="your-auth-secret-here"
+
 # Admin Configuration
 ADMIN_EMAILS="your-email@example.com,another-admin@example.com"
 

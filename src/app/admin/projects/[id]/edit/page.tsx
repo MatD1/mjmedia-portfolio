@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -35,16 +35,11 @@ const projectSchema = z.object({
   order: z.number().min(0).default(0),
 });
 
-type ProjectFormData = z.infer<typeof projectSchema>;
+type ProjectFormData = z.input<typeof projectSchema>;
 
-interface EditProjectPageProps {
-  params: {
-    id: string;
-  };
-}
-
-export default function EditProjectPage({ params }: EditProjectPageProps) {
+export default function EditProjectPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
   const projectId = parseInt(params.id);
   
   const [techStack, setTechStack] = useState<string[]>([]);

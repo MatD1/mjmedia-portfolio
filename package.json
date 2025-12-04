@@ -52,6 +52,9 @@
 		"tailwindcss": "^4.0.15",
 		"typescript": "^5.8.2"
 	},
+	"overrides": {
+		"@auth/core": "0.41.1"
+	},
 	"ct3aMetadata": {
 		"initVersion": "7.39.3"
 	},

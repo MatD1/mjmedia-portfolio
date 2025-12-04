@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,16 +26,11 @@ const storySchema = z.object({
   published: z.boolean().default(false),
 });
 
-type StoryFormData = z.infer<typeof storySchema>;
+type StoryFormData = z.input<typeof storySchema>;
 
-interface EditStoryPageProps {
-  params: {
-    id: string;
-  };
-}
-
-export default function EditStoryPage({ params }: EditStoryPageProps) {
+export default function EditStoryPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
   const storyId = parseInt(params.id);
 
   const {

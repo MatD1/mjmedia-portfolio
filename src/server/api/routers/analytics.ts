@@ -34,11 +34,12 @@ export const analyticsRouter = createTRPCRouter({
         const end = endDate ? new Date(endDate) : new Date();
         const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-        const params = new URLSearchParams({
-          start: start.toISOString().split('T')[0],
-          end: end.toISOString().split('T')[0],
-          timezone: 'UTC'
-        });
+        const params = new URLSearchParams();
+        const startStr = start.toISOString().split('T')[0]!;
+        const endStr = end.toISOString().split('T')[0]!;
+        params.set('start', startStr);
+        params.set('end', endStr);
+        params.set('timezone', 'UTC');
 
         // Fetch analytics data from Umami API
         const [statsResponse, pagesResponse, referrersResponse, devicesResponse] = await Promise.all([

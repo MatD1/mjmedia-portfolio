@@ -13,7 +13,7 @@ interface UserItem {
   email: string | null;
   image: string | null;
   role: 'ADMIN' | 'VIEWER';
-  createdAt: string | Date;
+  createdAt?: string | Date;
 }
 
 interface AdminUsersClientProps {
@@ -71,7 +71,9 @@ export default function AdminUsersClient({ users }: AdminUsersClientProps) {
                   <td className="py-3 pr-4">
                     <Badge variant={u.role === 'ADMIN' ? 'success' : 'default'} size="sm">{u.role}</Badge>
                   </td>
-                  <td className="py-3 pr-4">{new Date(u.createdAt).toLocaleDateString()}</td>
+                  <td className="py-3 pr-4">
+                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                  </td>
                   <td className="py-3 pr-4 text-right">
                     <div className="inline-flex gap-2">
                       <select

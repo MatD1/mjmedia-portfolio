@@ -28,7 +28,7 @@ const blogSchema = z.object({
   published: z.boolean().default(false),
 });
 
-type BlogFormData = z.infer<typeof blogSchema>;
+type BlogFormData = z.input<typeof blogSchema>;
 
 export default function NewBlogPage() {
   const router = useRouter();

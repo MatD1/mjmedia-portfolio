@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { adminProcedure, createTRPCRouter } from "~/server/api/trpc";
 
@@ -11,7 +12,7 @@ export const userRouter = createTRPCRouter({
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const where = input?.search
+      const where: Prisma.UserWhereInput | undefined = input?.search
         ? {
             OR: [
               { name: { contains: input.search, mode: "insensitive" } },
@@ -24,14 +25,12 @@ export const userRouter = createTRPCRouter({
         where,
         take: input?.limit ?? 20,
         cursor: input?.cursor ? { id: input.cursor } : undefined,
-        orderBy: { createdAt: "desc" },
         select: {
           id: true,
           name: true,
           email: true,
           image: true,
           role: true,
-          createdAt: true,
         },
       });
 

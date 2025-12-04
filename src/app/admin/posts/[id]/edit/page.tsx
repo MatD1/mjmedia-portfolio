@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,16 +26,11 @@ const postSchema = z.object({
   published: z.boolean().default(false),
 });
 
-type PostFormData = z.infer<typeof postSchema>;
+type PostFormData = z.input<typeof postSchema>;
 
-interface EditPostPageProps {
-  params: {
-    id: string;
-  };
-}
-
-export default function EditPostPage({ params }: EditPostPageProps) {
+export default function EditPostPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
   const postId = parseInt(params.id);
 
   const {

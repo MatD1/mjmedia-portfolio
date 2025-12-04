@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -29,16 +29,11 @@ const blogSchema = z.object({
   published: z.boolean().default(false),
 });
 
-type BlogFormData = z.infer<typeof blogSchema>;
+type BlogFormData = z.input<typeof blogSchema>;
 
-interface EditBlogPageProps {
-  params: {
-    id: string;
-  };
-}
-
-export default function EditBlogPage({ params }: EditBlogPageProps) {
+export default function EditBlogPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
   const blogId = parseInt(params.id);
   
   const [tags, setTags] = useState<string[]>([]);

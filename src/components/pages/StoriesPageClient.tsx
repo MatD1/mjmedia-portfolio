@@ -9,13 +9,13 @@ import Button from '~/components/ui/Button';
 import Loading from '~/components/ui/Loading';
 
 interface StoryItem {
-  id: string;
+  id: string | number;
   title: string;
   content: string;
   excerpt?: string | null;
   coverImage?: string | null;
   createdAt: string | Date;
-  createdBy: { name: string };
+  createdBy: { name: string | null };
 }
 
 interface StoriesPageClientProps {

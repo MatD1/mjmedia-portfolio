@@ -25,7 +25,7 @@ const storySchema = z.object({
   published: z.boolean().default(false),
 });
 
-type StoryFormData = z.infer<typeof storySchema>;
+type StoryFormData = z.input<typeof storySchema>;
 
 export default function NewStoryPage() {
   const router = useRouter();

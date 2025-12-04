@@ -20,9 +20,29 @@ import Card from "~/components/ui/Card";
 import Button from "~/components/ui/Button";
 import Badge from "~/components/ui/Badge";
 
+interface FeaturedProject {
+  id: string | number;
+  title: string;
+  description: string;
+  images: string[];
+  techStack: string[];
+}
+
+interface LatestBlog {
+  id: string | number;
+  title: string;
+  content: string;
+  excerpt?: string | null;
+  coverImage?: string | null;
+  tags: string[];
+  createdAt: string | Date;
+  createdBy: { name: string | null };
+  views: number;
+}
+
 interface HomePageClientProps {
-  featuredProjects: any[];
-  latestBlogs: any[];
+  featuredProjects: FeaturedProject[];
+  latestBlogs: LatestBlog[];
 }
 
 export default function HomePageClient({ featuredProjects, latestBlogs }: HomePageClientProps) {

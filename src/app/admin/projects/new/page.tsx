@@ -34,7 +34,7 @@ const projectSchema = z.object({
   order: z.number().min(0).default(0),
 });
 
-type ProjectFormData = z.infer<typeof projectSchema>;
+type ProjectFormData = z.input<typeof projectSchema>;
 
 export default function NewProjectPage() {
   const router = useRouter();

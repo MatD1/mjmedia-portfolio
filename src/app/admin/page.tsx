@@ -13,9 +13,9 @@ export default async function AdminDashboard() {
   ]);
 
   const recent = [
-    ...recentProjects.items.map(item => ({ id: item.id, title: item.title, published: item.published, createdAt: item.createdAt, type: 'project' as const })),
-    ...recentBlogs.items.map(item => ({ id: item.id, title: item.title, published: item.published, createdAt: item.createdAt, type: 'blog' as const })),
-    ...recentStories.items.map(item => ({ id: item.id, title: item.title, published: item.published, createdAt: item.createdAt, type: 'story' as const })),
+    ...recentProjects.items.map(item => ({ id: item.id.toString(), title: item.title, published: item.published, createdAt: item.createdAt, type: 'project' as const })),
+    ...recentBlogs.items.map(item => ({ id: item.id.toString(), title: item.title, published: item.published, createdAt: item.createdAt, type: 'blog' as const })),
+    ...recentStories.items.map(item => ({ id: item.id.toString(), title: item.title, published: item.published, createdAt: item.createdAt, type: 'story' as const })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
 
   return (

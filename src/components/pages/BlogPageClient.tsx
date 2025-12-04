@@ -10,7 +10,7 @@ import Badge from '~/components/ui/Badge';
 import Loading from '~/components/ui/Loading';
 
 interface BlogItem {
-  id: string;
+  id: string | number;
   title: string;
   content: string;
   excerpt?: string | null;
@@ -18,7 +18,7 @@ interface BlogItem {
   tags: string[];
   views: number;
   createdAt: string | Date;
-  createdBy: { name: string };
+  createdBy: { name: string | null };
 }
 
 interface BlogPageClientProps {

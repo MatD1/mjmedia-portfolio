@@ -2,22 +2,23 @@ import { api } from '~/trpc/server';
 import ProjectsPageClient from '~/components/pages/ProjectsPageClient';
 
 interface ProjectsPageProps {
-  searchParams: {
+  searchParams: Promise<{
     search?: string;
     tech?: string;
-  };
+  }>;
 }
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
+  const resolvedSearchParams = await searchParams;
   const projects = await api.project.getAll({ 
     limit: 12,
-    ...(searchParams.tech && { tech: searchParams.tech })
+    ...(resolvedSearchParams.tech && { tech: resolvedSearchParams.tech })
   });
 
   return (
     <ProjectsPageClient 
       projects={projects.items}
-      searchParams={searchParams}
+      searchParams={resolvedSearchParams}
     />
   );
 }
