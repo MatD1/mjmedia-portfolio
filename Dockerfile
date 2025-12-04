@@ -9,6 +9,7 @@ RUN apk add --no-cache libc6-compat python3 make g++ openssl
 
 FROM base AS deps
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 # Install all dependencies (dev + prod) for the build
 RUN npm install
 
