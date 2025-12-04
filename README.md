@@ -114,6 +114,20 @@ NODE_ENV="development"
 3. Generate an API token in your Umami settings
 4. Add the Umami tracking script to your site (already included in the layout)
 
+## 🐳 Docker Support
+
+If your hosting platform prefers Docker images (or you want to avoid env validation during the build step), you can ship this app via the included `Dockerfile`.
+
+```bash
+# Build the production image
+docker build -t mjmedia-portfolio .
+
+# Run locally (remember to pass env vars)
+docker run --env-file .env.local -p 3000:3000 mjmedia-portfolio
+```
+
+`SKIP_ENV_VALIDATION` is set automatically in the build stage so the image can be created without injecting production secrets. You still **must** provide `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, and `DATABASE_URL` (plus any other optional vars) at runtime—Railway does this by exposing them as container environment variables.
+
 ## 📁 Project Structure
 
 ```

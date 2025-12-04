@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.next
+out
+.git
+.gitignore
+.dockerignore
+Dockerfile
+coverage
+.turbo
+.env
+.env.*
+*.log
+prisma/dev.db
+tmp
+
