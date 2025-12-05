@@ -2,13 +2,11 @@
 
 FROM node:20-alpine AS base
 WORKDIR /app
-ENV NODE_ENV=production
 
 # Install OS deps needed by Prisma & Next
-RUN apk add --no-cache libc6-compat python3 make g++ openssl
+RUN apk add --no-cache libc6-compat openssl
 
 FROM base AS deps
-ENV NODE_ENV=development
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 # Install all dependencies (dev + prod) for the build
@@ -25,16 +23,25 @@ COPY . .
 RUN npm run build
 
 FROM base AS runner
+ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
 
-# Install only prod dependencies
+# Copy package.json (but skip postinstall by using --ignore-scripts)
 COPY package.json package-lock.json* ./
-COPY --from=builder /app/prisma ./prisma
-RUN npm install --omit=dev && npm cache clean --force
 
+# Copy prisma schema and the ALREADY GENERATED client from builder
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+# Install prod dependencies WITHOUT running postinstall (prisma generate)
+RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+
+# Copy built app
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.js ./
 
 CMD ["npm", "run", "start"]
 
