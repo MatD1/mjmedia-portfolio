@@ -38,10 +38,11 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 # Install prod dependencies WITHOUT running postinstall (prisma generate)
 RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
 
-# Copy built app
+# Copy built app and config
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/src/env.js ./src/
 
 CMD ["npm", "run", "start"]
 
