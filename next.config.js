@@ -6,6 +6,9 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
+	// Output standalone build for Docker deployments
+	output: "standalone",
+
 	// Reduce bundle size by not including source maps in production
 	productionBrowserSourceMaps: false,
 

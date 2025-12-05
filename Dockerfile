@@ -6,43 +6,50 @@ WORKDIR /app
 # Install OS deps needed by Prisma & Next
 RUN apk add --no-cache libc6-compat openssl
 
+# ---------------------------------------------------------------------------
 FROM base AS deps
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 # Install all dependencies (dev + prod) for the build
-RUN npm install
+RUN npm ci
 
+# ---------------------------------------------------------------------------
 FROM base AS builder
 ENV NODE_ENV=production
 ENV SKIP_ENV_VALIDATION=1
 ENV SKIP_DB_CONNECT=1
 ARG DUMMY_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres"
 ENV DATABASE_URL=$DUMMY_DATABASE_URL
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Generate Prisma client with correct binary for Alpine
+RUN npx prisma generate
+
+# Build Next.js (standalone mode bundles dependencies)
 RUN npm run build
 
+# ---------------------------------------------------------------------------
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 EXPOSE 3000
 
-# Copy package.json (but skip postinstall by using --ignore-scripts)
-COPY package.json package-lock.json* ./
+# Don't run as root
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Copy prisma schema and the ALREADY GENERATED client from builder
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-# Install prod dependencies WITHOUT running postinstall (prisma generate)
-RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
-
-# Copy built app and config
-COPY --from=builder /app/.next ./.next
+# Copy public assets
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.js ./
-COPY --from=builder /app/src/env.js ./src/
 
-CMD ["npm", "run", "start"]
+# Copy standalone build (includes node_modules and server.js)
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+# Use the standalone server directly (not npm run start)
+CMD ["node", "server.js"]
 
