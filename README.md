@@ -95,6 +95,11 @@ UMAMI_WEBSITE_ID="your-umami-website-id"
 
 # Environment
 NODE_ENV="development"
+
+# (Optional) Database wake-up tuning
+# DB_CONNECT_MAX_ATTEMPTS="10"
+# DB_CONNECT_BASE_DELAY_MS="1000"
+# DB_CONNECT_MAX_DELAY_MS="15000"
 ```
 
 ### Setting up GitHub OAuth

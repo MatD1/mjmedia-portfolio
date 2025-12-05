@@ -15,8 +15,11 @@ COPY prisma ./prisma
 RUN npm install
 
 FROM base AS builder
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV SKIP_ENV_VALIDATION=1
+ENV SKIP_DB_CONNECT=1
+ARG DUMMY_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres"
+ENV DATABASE_URL=$DUMMY_DATABASE_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
