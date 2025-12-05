@@ -20,8 +20,7 @@ const wait = (ms: number) =>
 
 const createPrismaClient = () =>
 	new PrismaClient({
-		log:
-			env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+		log: env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
 	});
 
 const globalForPrisma = globalThis as unknown as {
@@ -73,8 +72,51 @@ const connectWithRetry = async (
 	throw lastError;
 };
 
+/**
+ * Helper to wrap database operations with retry logic for sleeping databases.
+ * Use this in tRPC procedures or other server code when you need explicit retry control.
+ */
+async function withRetry<T>(
+	operation: () => Promise<T>,
+	maxAttempts = 5,
+	baseDelay = 1000,
+): Promise<T> {
+	let lastError: unknown;
+
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			return await operation();
+		} catch (error) {
+			lastError = error;
+
+			const isPrismaConnectionError =
+				error instanceof Error &&
+				(error.message.includes("Can't reach database server") ||
+					error.message.includes("Connection refused") ||
+					error.message.includes("Connection timed out") ||
+					error.message.includes("ECONNREFUSED") ||
+					error.message.includes("P1001") ||
+					error.message.includes("P1002") ||
+					error.message.includes("P1008") ||
+					error.message.includes("P1017"));
+
+			if (!isPrismaConnectionError || attempt === maxAttempts) {
+				throw error;
+			}
+
+			const delay = baseDelay * Math.pow(2, attempt - 1);
+			console.warn(
+				`DB operation failed (attempt ${attempt}/${maxAttempts}). Retrying in ${delay}ms...`,
+			);
+			await wait(delay);
+		}
+	}
+
+	throw lastError;
+}
+
 if (shouldWarmConnection) {
 	await connectWithRetry(db);
 }
 
-export { db };
+export { db, withRetry };

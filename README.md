@@ -74,6 +74,8 @@ Create a `.env.local` file with the following variables:
 
 ```env
 # Database
+# For Railway/serverless add connection pool params:
+# DATABASE_URL="postgresql://...?connection_limit=5&pool_timeout=20"
 DATABASE_URL="postgresql://username:password@localhost:5432/mjmedia_portfolio"
 
 # NextAuth.js

@@ -12,7 +12,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { auth } from "~/server/auth";
-import { db } from "~/server/db";
+import { db, withRetry } from "~/server/db";
 
 /**
  * 1. CONTEXT
@@ -32,6 +32,7 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
 	return {
 		db,
 		session,
+		withRetry,
 		...opts,
 	};
 };
@@ -79,26 +80,46 @@ export const createCallerFactory = t.createCallerFactory;
 export const createTRPCRouter = t.router;
 
 /**
- * Middleware for timing procedure execution and adding an artificial delay in development.
- *
- * You can remove this if you don't like it, but it can help catch unwanted waterfalls by simulating
- * network latency that would occur in production but not in local development.
+ * Middleware that retries database operations when the DB is waking up.
+ * This handles Railway's sleeping Postgres by catching connection errors
+ * and retrying with exponential backoff.
  */
-const timingMiddleware = t.middleware(async ({ next, path }) => {
-	const start = Date.now();
+const dbRetryMiddleware = t.middleware(async ({ next, ctx }) => {
+	const maxAttempts = 5;
+	const baseDelay = 1000;
+	let lastError: unknown;
 
-	if (t._config.isDev) {
-		// artificial delay in dev
-		const waitMs = Math.floor(Math.random() * 400) + 100;
-		await new Promise((resolve) => setTimeout(resolve, waitMs));
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			return await next({ ctx });
+		} catch (error) {
+			lastError = error;
+
+			// Check if this is a Prisma connection error
+			const isPrismaConnectionError =
+				error instanceof Error &&
+				(error.message.includes("Can't reach database server") ||
+					error.message.includes("Connection refused") ||
+					error.message.includes("Connection timed out") ||
+					error.message.includes("ECONNREFUSED") ||
+					error.message.includes("P1001") ||
+					error.message.includes("P1002") ||
+					error.message.includes("P1008") ||
+					error.message.includes("P1017"));
+
+			if (!isPrismaConnectionError || attempt === maxAttempts) {
+				throw error;
+			}
+
+			const delay = baseDelay * Math.pow(2, attempt - 1);
+			console.warn(
+				`[TRPC] DB connection failed (attempt ${attempt}/${maxAttempts}). Retrying in ${delay}ms...`,
+			);
+			await new Promise((resolve) => setTimeout(resolve, delay));
+		}
 	}
 
-	const result = await next();
-
-	const end = Date.now();
-	console.log(`[TRPC] ${path} took ${end - start}ms to execute`);
-
-	return result;
+	throw lastError;
 });
 
 /**
@@ -108,7 +129,7 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
  * guarantee that a user querying is authorized, but you can still access user session data if they
  * are logged in.
  */
-export const publicProcedure = t.procedure.use(timingMiddleware);
+export const publicProcedure = t.procedure.use(dbRetryMiddleware);
 
 /**
  * Protected (authenticated) procedure
@@ -119,7 +140,7 @@ export const publicProcedure = t.procedure.use(timingMiddleware);
  * @see https://trpc.io/docs/procedures
  */
 export const protectedProcedure = t.procedure
-	.use(timingMiddleware)
+	.use(dbRetryMiddleware)
 	.use(({ ctx, next }) => {
 		if (!ctx.session?.user) {
 			throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -138,8 +159,8 @@ export const protectedProcedure = t.procedure
  * Use this for queries/mutations that require ADMIN role.
  */
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-    if (ctx.session.user.role !== "ADMIN") {
-        throw new TRPCError({ code: "FORBIDDEN" });
-    }
-    return next();
+	if (ctx.session.user.role !== "ADMIN") {
+		throw new TRPCError({ code: "FORBIDDEN" });
+	}
+	return next();
 });
