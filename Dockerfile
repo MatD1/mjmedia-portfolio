@@ -8,12 +8,14 @@ ENV NODE_ENV=production
 RUN apk add --no-cache libc6-compat python3 make g++ openssl
 
 FROM base AS deps
+ENV NODE_ENV=development
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 # Install all dependencies (dev + prod) for the build
 RUN npm install
 
 FROM base AS builder
+ENV NODE_ENV=development
 ENV SKIP_ENV_VALIDATION=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
