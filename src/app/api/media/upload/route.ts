@@ -125,120 +125,138 @@ async function processImage(
 }
 
 export async function GET() {
-  const session = await getServerAuthSession();
-  if (!session || session.user.role !== 'ADMIN') {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
-  // Use Minio if configured, otherwise use local storage
-  if (isMinioConfigured) {
-    try {
-      const items = await listFiles();
-      return NextResponse.json({ items, storage: 'minio' });
-    } catch (error) {
-      console.error('Minio list error:', error);
-      return new NextResponse('Failed to list files from storage', { status: 500 });
+  try {
+    const session = await getServerAuthSession();
+    
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
-  }
+    
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    }
 
-  // Fallback to local storage
-  const uploadsDir = join(process.cwd(), 'public', 'uploads');
-  await ensureUploadsDir(uploadsDir);
-  const files = await readdir(uploadsDir);
-  const items = files
-    .filter((f) => !f.startsWith('.'))
-    .map((f) => ({ filename: f, url: `/uploads/${f}` }));
-  return NextResponse.json({ items, storage: 'local' });
+    // Use Minio if configured, otherwise use local storage
+    if (isMinioConfigured) {
+      try {
+        const items = await listFiles();
+        return NextResponse.json({ items, storage: 'minio' });
+      } catch (error) {
+        console.error('Minio list error:', error);
+        return NextResponse.json({ error: 'Failed to list files from storage', items: [] }, { status: 500 });
+      }
+    }
+
+    // Fallback to local storage
+    const uploadsDir = join(process.cwd(), 'public', 'uploads');
+    await ensureUploadsDir(uploadsDir);
+    const files = await readdir(uploadsDir);
+    const items = files
+      .filter((f) => !f.startsWith('.'))
+      .map((f) => ({ filename: f, url: `/uploads/${f}` }));
+    return NextResponse.json({ items, storage: 'local' });
+  } catch (error) {
+    console.error('GET /api/media/upload error:', error);
+    return NextResponse.json({ error: 'Internal server error', items: [] }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
-  if (!session || session.user.role !== 'ADMIN') {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
+  try {
+    const session = await getServerAuthSession();
+    
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+    
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    }
 
-  const form = await request.formData();
-  const file = form.get('file');
-  const convertTo = form.get('convertTo') as string | null; // Optional: 'png', 'jpeg', 'webp'
-  
-  if (!file || !(file instanceof File)) {
-    return new NextResponse('No file provided', { status: 400 });
-  }
+    const form = await request.formData();
+    const file = form.get('file');
+    const convertTo = form.get('convertTo') as string | null;
+    
+    if (!file || !(file instanceof File)) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
 
-  // Validate file size
-  if (file.size > MAX_FILE_SIZE) {
-    return new NextResponse('File too large. Maximum size is 25MB.', { status: 400 });
-  }
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: 'File too large. Maximum size is 25MB.' }, { status: 400 });
+    }
 
-  // Validate file extension
-  const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
-  const safeExt = (ext || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  
-  if (!safeExt || !ALLOWED_EXTENSIONS.has(safeExt)) {
-    return new NextResponse('File type not allowed', { status: 400 });
-  }
+    // Validate file extension
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
+    const safeExt = (ext || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    if (!safeExt || !ALLOWED_EXTENSIONS.has(safeExt)) {
+      return NextResponse.json({ error: 'File type not allowed' }, { status: 400 });
+    }
 
-  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
-  let finalExt = safeExt;
-  let contentType = getContentType(safeExt);
-  let wasConverted = false;
+    let buffer: Buffer = Buffer.from(await file.arrayBuffer());
+    let finalExt = safeExt;
+    let contentType = getContentType(safeExt);
+    let wasConverted = false;
 
-  // Process images (convert HEIC/HEIF, optimize, resize)
-  if (IMAGE_EXTENSIONS.has(safeExt) && safeExt !== 'svg' && safeExt !== 'gif') {
-    try {
-      const targetFormat = convertTo as 'png' | 'jpeg' | 'webp' | undefined;
-      const processed = await processImage(buffer, safeExt, targetFormat);
-      if (processed) {
-        buffer = Buffer.from(processed.buffer);
-        finalExt = processed.ext;
-        contentType = processed.contentType;
-        wasConverted = safeExt !== finalExt;
-      } else if (CONVERT_TO_PNG.has(safeExt)) {
-        // HEIC/HEIF requires conversion but sharp isn't available
-        return new NextResponse('HEIC/HEIF conversion not available. Please convert to PNG/JPEG first.', { status: 400 });
-      }
-    } catch (error) {
-      console.error('Image processing error:', error);
-      // Continue with original file if processing fails (unless HEIC/HEIF)
-      if (CONVERT_TO_PNG.has(safeExt)) {
-        return new NextResponse('Failed to convert HEIC/HEIF image. Please convert to PNG/JPEG first.', { status: 400 });
+    // Process images (convert HEIC/HEIF, optimize, resize)
+    if (IMAGE_EXTENSIONS.has(safeExt) && safeExt !== 'svg' && safeExt !== 'gif') {
+      try {
+        const targetFormat = convertTo as 'png' | 'jpeg' | 'webp' | undefined;
+        const processed = await processImage(buffer, safeExt, targetFormat);
+        if (processed) {
+          buffer = Buffer.from(processed.buffer);
+          finalExt = processed.ext;
+          contentType = processed.contentType;
+          wasConverted = safeExt !== finalExt;
+        } else if (CONVERT_TO_PNG.has(safeExt)) {
+          return NextResponse.json({ error: 'HEIC/HEIF conversion not available. Please convert to PNG/JPEG first.' }, { status: 400 });
+        }
+      } catch (error) {
+        console.error('Image processing error:', error);
+        if (CONVERT_TO_PNG.has(safeExt)) {
+          return NextResponse.json({ error: 'Failed to convert HEIC/HEIF image. Please convert to PNG/JPEG first.' }, { status: 400 });
+        }
       }
     }
-  }
 
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${finalExt}`;
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${finalExt}`;
 
-  // Use Minio if configured, otherwise use local storage
-  if (isMinioConfigured) {
-    try {
-      const url = await uploadFile(buffer, filename, contentType);
-      return NextResponse.json({ 
-        url, 
-        filename, 
-        storage: 'minio',
-        converted: wasConverted,
-        originalFormat: wasConverted ? safeExt : undefined,
-      });
-    } catch (error) {
-      console.error('Minio upload error:', error);
-      return new NextResponse('Failed to upload to storage', { status: 500 });
+    // Use Minio if configured, otherwise use local storage
+    if (isMinioConfigured) {
+      try {
+        const url = await uploadFile(buffer, filename, contentType);
+        return NextResponse.json({ 
+          url, 
+          filename, 
+          storage: 'minio',
+          converted: wasConverted,
+          originalFormat: wasConverted ? safeExt : undefined,
+        });
+      } catch (error) {
+        console.error('Minio upload error:', error);
+        return NextResponse.json({ error: 'Failed to upload to storage' }, { status: 500 });
+      }
     }
+
+    // Fallback to local storage
+    const uploadsDir = join(process.cwd(), 'public', 'uploads');
+    await ensureUploadsDir(uploadsDir);
+    const filepath = join(uploadsDir, filename);
+    await writeFile(filepath, buffer);
+
+    const url = `/uploads/${filename}`;
+    return NextResponse.json({ 
+      url, 
+      filename, 
+      storage: 'local',
+      converted: wasConverted,
+      originalFormat: wasConverted ? safeExt : undefined,
+    });
+  } catch (error) {
+    console.error('POST /api/media/upload error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Fallback to local storage
-  const uploadsDir = join(process.cwd(), 'public', 'uploads');
-  await ensureUploadsDir(uploadsDir);
-  const filepath = join(uploadsDir, filename);
-  await writeFile(filepath, buffer);
-
-  const url = `/uploads/${filename}`;
-  return NextResponse.json({ 
-    url, 
-    filename, 
-    storage: 'local',
-    converted: wasConverted,
-    originalFormat: wasConverted ? safeExt : undefined,
-  });
 }
 
 

@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import Card from '~/components/ui/Card';
 import Button from '~/components/ui/Button';
 import Loading from '~/components/ui/Loading';
+import { toast } from 'sonner';
 
 interface MediaItem { filename: string; url: string }
 
@@ -12,12 +13,24 @@ export default function AdminMediaClient() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     setIsLoading(true);
-    const res = await fetch('/api/media/upload');
-    const data = await res.json();
-    setItems(data.items ?? []);
+    setError(null);
+    try {
+      const res = await fetch('/api/media/upload');
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to load media');
+        setItems([]);
+      } else {
+        setItems(data.items ?? []);
+      }
+    } catch (err) {
+      setError('Failed to connect to server');
+      setItems([]);
+    }
     setIsLoading(false);
   };
 
@@ -28,14 +41,28 @@ export default function AdminMediaClient() {
   const onUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    if (!formData.get('file')) return;
-    setUploading(true);
-    const res = await fetch('/api/media/upload', { method: 'POST', body: formData });
-    setUploading(false);
-    if (res.ok) {
-      (e.currentTarget as HTMLFormElement).reset();
-      await refresh();
+    const file = formData.get('file') as File | null;
+    if (!file || !file.name) {
+      toast.error('Please select a file');
+      return;
     }
+    
+    setUploading(true);
+    try {
+      const res = await fetch('/api/media/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      
+      if (res.ok) {
+        toast.success(`Uploaded ${data.filename}${data.converted ? ` (converted from ${data.originalFormat})` : ''}`);
+        (e.currentTarget as HTMLFormElement).reset();
+        await refresh();
+      } else {
+        toast.error(data.error ?? 'Upload failed');
+      }
+    } catch (err) {
+      toast.error('Failed to upload file');
+    }
+    setUploading(false);
   };
 
   return (
@@ -55,6 +82,11 @@ export default function AdminMediaClient() {
       <Card className="p-6">
         {isLoading ? (
           <Loading text="Loading media..." />
+        ) : error ? (
+          <div className="text-center">
+            <p className="text-[var(--neon-red)] mb-4">{error}</p>
+            <Button onClick={refresh} variant="secondary" size="sm">Retry</Button>
+          </div>
         ) : items.length === 0 ? (
           <div className="text-center text-[var(--text-secondary)]">No media uploaded yet.</div>
         ) : (
