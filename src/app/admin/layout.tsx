@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { auth } from '~/server/auth';
+import { getServerAuthSession } from '~/server/auth';
 import AdminLayout from '~/components/admin/AdminLayout';
 
 export default async function AdminLayoutWrapper({
@@ -7,7 +7,7 @@ export default async function AdminLayoutWrapper({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  const session = await getServerAuthSession();
 
   // Redirect to sign in if not authenticated
   if (!session) {

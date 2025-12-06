@@ -1,9 +1,9 @@
-import type { DefaultSession, NextAuthConfig } from "next-auth";
+import type { NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
 
 import { db, withRetry } from "~/server/db";
 import { env } from "~/env.js";
-import { ResilientPrismaAdapter } from "./resilient-adapter";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -12,11 +12,14 @@ import { ResilientPrismaAdapter } from "./resilient-adapter";
  * @see https://next-auth.js.org/getting-started/typescript#module-augmentation
  */
 declare module "next-auth" {
-	interface Session extends DefaultSession {
+	interface Session {
 		user: {
 			id: string;
 			role: "VIEWER" | "ADMIN";
-		} & DefaultSession["user"];
+			name?: string | null;
+			email?: string | null;
+			image?: string | null;
+		};
 	}
 
 	interface User {
@@ -29,15 +32,14 @@ declare module "next-auth" {
  *
  * @see https://next-auth.js.org/configuration/options
  */
-export const authConfig = {
+export const authOptions: NextAuthOptions = {
 	providers: [
 		GitHubProvider({
 			clientId: env.AUTH_GITHUB_ID,
 			clientSecret: env.AUTH_GITHUB_SECRET,
 		}),
 	],
-	// Use resilient adapter that retries on connection errors
-	adapter: ResilientPrismaAdapter(db),
+	adapter: PrismaAdapter(db),
 	callbacks: {
 		session: ({ session, user }) => ({
 			...session,
@@ -55,15 +57,27 @@ export const authConfig = {
 				);
 				if (adminEmails.includes(user.email)) {
 					// Update user role to ADMIN with retry
-					await withRetry(() =>
-						db.user.update({
-							where: { email: user.email! },
-							data: { role: "ADMIN" },
-						}),
-					);
+					try {
+						await withRetry(() =>
+							db.user.update({
+								where: { email: user.email! },
+								data: { role: "ADMIN" },
+							}),
+						);
+					} catch (error) {
+						console.error("Failed to update user role:", error);
+					}
 				}
 			}
 			return true;
 		},
 	},
-} satisfies NextAuthConfig;
+	pages: {
+		signIn: "/auth/signin",
+		error: "/auth/error",
+	},
+	session: {
+		strategy: "database",
+	},
+	secret: env.AUTH_SECRET,
+};

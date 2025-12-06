@@ -1,11 +1,10 @@
-import NextAuth from "next-auth";
-import { cache } from "react";
+import { getServerSession } from "next-auth";
+import { authOptions } from "./config";
 
-import { authConfig } from "./config";
+/**
+ * Get the server-side session.
+ * Use this in Server Components and API routes.
+ */
+export const getServerAuthSession = () => getServerSession(authOptions);
 
-const { auth: uncachedAuth, handlers, signIn, signOut } = NextAuth(authConfig);
-
-const auth = cache(uncachedAuth);
-const getServerAuthSession = () => auth();
-
-export { auth, handlers, signIn, signOut, getServerAuthSession };
+export { authOptions };
