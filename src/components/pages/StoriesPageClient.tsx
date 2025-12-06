@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { IoNewspaper, IoSearch, IoFilter, IoCalendar } from 'react-icons/io5';
 
@@ -93,39 +94,41 @@ export default function StoriesPageClient({ stories, searchParams }: StoriesPage
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: index * 0.1 }}
                 >
-                  <Card className="h-full group">
-                    <div className="space-y-4">
-                      {story.coverImage && (
-                        <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
-                          <img 
-                            src={story.coverImage} 
-                            alt={story.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        </div>
-                      )}
-                      
-                      <div className="space-y-3">
-                        <h3 className="pixel-text text-lg text-glow line-clamp-2 group-hover:text-[var(--neon-cyan)] transition-colors">
-                          {story.title}
-                        </h3>
-                        
-                        <p className="text-[var(--text-secondary)] text-sm line-clamp-3">
-                          {story.excerpt || story.content.substring(0, 150) + '...'}
-                        </p>
-                        
-                        <div className="flex items-center justify-between text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--border-primary)]">
-                          <div className="flex items-center gap-4">
-                            <span className="flex items-center gap-1">
-                              <IoCalendar />
-                              {new Date(story.createdAt).toLocaleDateString()}
-                            </span>
+                  <Link href={`/stories/${story.id}`} className="block h-full">
+                    <Card className="h-full group cursor-pointer hover:border-[var(--neon-cyan)] transition-colors">
+                      <div className="space-y-4">
+                        {story.coverImage && (
+                          <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
+                            <img 
+                              src={story.coverImage} 
+                              alt={story.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
                           </div>
-                          <span>by {story.createdBy.name}</span>
+                        )}
+                        
+                        <div className="space-y-3">
+                          <h3 className="pixel-text text-lg text-glow line-clamp-2 group-hover:text-[var(--neon-cyan)] transition-colors">
+                            {story.title}
+                          </h3>
+                          
+                          <p className="text-[var(--text-secondary)] text-sm line-clamp-3">
+                            {story.excerpt || story.content.substring(0, 150) + '...'}
+                          </p>
+                          
+                          <div className="flex items-center justify-between text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--border-primary)]">
+                            <div className="flex items-center gap-4">
+                              <span className="flex items-center gap-1">
+                                <IoCalendar />
+                                {new Date(story.createdAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <span>by {story.createdBy.name}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </Link>
                 </motion.div>
               ))}
             </div>

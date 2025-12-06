@@ -74,14 +74,13 @@ Create a `.env.local` file with the following variables:
 
 ```env
 # Database
-# For Railway/serverless add connection pool params:
-# DATABASE_URL="postgresql://...?connection_limit=5&pool_timeout=20"
 DATABASE_URL="postgresql://username:password@localhost:5432/mjmedia_portfolio"
 
 # NextAuth.js
 AUTH_SECRET="your-auth-secret-here"
 AUTH_GITHUB_ID="your-github-client-id"
 AUTH_GITHUB_SECRET="your-github-client-secret"
+AUTH_URL="http://localhost:3000"  # Required for production deployments
 
 # If you're migrating from NextAuth v4 you can keep NEXTAUTH_SECRET;
 # the app will treat it the same as AUTH_SECRET.
@@ -103,6 +102,25 @@ NODE_ENV="development"
 # DB_CONNECT_BASE_DELAY_MS="1000"
 # DB_CONNECT_MAX_DELAY_MS="15000"
 ```
+
+### Railway-Specific Configuration
+
+When deploying to Railway with a PostgreSQL database, use these recommended settings:
+
+1. **DATABASE_URL**: Use Railway's internal URL with connection pool parameters:
+   ```
+   postgresql://user:pass@postgres.railway.internal:5432/railway?connection_limit=5&pool_timeout=20&connect_timeout=30
+   ```
+
+2. **AUTH_URL**: Set to your Railway app's public URL:
+   ```
+   AUTH_URL=https://your-app.up.railway.app
+   ```
+
+3. **Connection Resilience**: The app includes automatic retry logic for database connections. If you experience connection issues, you can tune the retry behavior:
+   - `DB_CONNECT_MAX_ATTEMPTS`: Number of retry attempts (default: 10)
+   - `DB_CONNECT_BASE_DELAY_MS`: Initial retry delay in ms (default: 1000)
+   - `DB_CONNECT_MAX_DELAY_MS`: Maximum retry delay in ms (default: 15000)
 
 ### Setting up GitHub OAuth
 

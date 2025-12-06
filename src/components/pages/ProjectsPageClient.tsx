@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { IoCodeSlash, IoFilter, IoSearch } from 'react-icons/io5';
 
@@ -99,60 +100,62 @@ export default function ProjectsPageClient({ projects, searchParams }: ProjectsP
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: index * 0.1 }}
                 >
-                  <Card className="h-full group">
-                    <div className="space-y-4">
-                      {project.images[0] && (
-                        <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
-                          <img 
-                            src={project.images[0]} 
-                            alt={project.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        </div>
-                      )}
-                      
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between">
-                          <h3 className="pixel-text text-lg text-glow line-clamp-2">
-                            {project.title}
-                          </h3>
-                          {project.featured && (
-                            <Badge variant="success" size="sm">Featured</Badge>
-                          )}
-                        </div>
+                  <Link href={`/projects/${project.id}`} className="block h-full">
+                    <Card className="h-full group cursor-pointer hover:border-[var(--neon-cyan)] transition-colors">
+                      <div className="space-y-4">
+                        {project.images[0] && (
+                          <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
+                            <img 
+                              src={project.images[0]} 
+                              alt={project.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          </div>
+                        )}
                         
-                        <p className="text-[var(--text-secondary)] text-sm line-clamp-3">
-                          {project.description}
-                        </p>
-                        
-                        <div className="flex flex-wrap gap-2">
-                          {project.techStack.slice(0, 4).map((tech) => (
-                            <Badge key={tech} variant="info" size="sm">
-                              {tech}
-                            </Badge>
-                          ))}
-                          {project.techStack.length > 4 && (
-                            <Badge variant="default" size="sm">
-                              +{project.techStack.length - 4}
-                            </Badge>
-                          )}
-                        </div>
-                        
-                        <div className="flex gap-2 pt-2">
-                          {project.liveUrl && (
-                            <Button size="sm" className="flex-1">
-                              Live Demo
-                            </Button>
-                          )}
-                          {project.githubUrl && (
-                            <Button variant="secondary" size="sm" className="flex-1">
-                              GitHub
-                            </Button>
-                          )}
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <h3 className="pixel-text text-lg text-glow line-clamp-2 group-hover:text-[var(--neon-cyan)] transition-colors">
+                              {project.title}
+                            </h3>
+                            {project.featured && (
+                              <Badge variant="success" size="sm">Featured</Badge>
+                            )}
+                          </div>
+                          
+                          <p className="text-[var(--text-secondary)] text-sm line-clamp-3">
+                            {project.description}
+                          </p>
+                          
+                          <div className="flex flex-wrap gap-2">
+                            {project.techStack.slice(0, 4).map((tech) => (
+                              <Badge key={tech} variant="info" size="sm">
+                                {tech}
+                              </Badge>
+                            ))}
+                            {project.techStack.length > 4 && (
+                              <Badge variant="default" size="sm">
+                                +{project.techStack.length - 4}
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          <div className="flex gap-2 pt-2">
+                            {project.liveUrl && (
+                              <Button size="sm" className="flex-1">
+                                Live Demo
+                              </Button>
+                            )}
+                            {project.githubUrl && (
+                              <Button variant="secondary" size="sm" className="flex-1">
+                                GitHub
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </Link>
                 </motion.div>
               ))}
             </div>

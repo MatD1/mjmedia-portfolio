@@ -1,9 +1,9 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
 
-import { db } from "~/server/db";
+import { db, withRetry } from "~/server/db";
 import { env } from "~/env.js";
+import { ResilientPrismaAdapter } from "./resilient-adapter";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -36,7 +36,8 @@ export const authConfig = {
 			clientSecret: env.AUTH_GITHUB_SECRET,
 		}),
 	],
-	adapter: PrismaAdapter(db),
+	// Use resilient adapter that retries on connection errors
+	adapter: ResilientPrismaAdapter(db),
 	callbacks: {
 		session: ({ session, user }) => ({
 			...session,
@@ -46,16 +47,20 @@ export const authConfig = {
 				role: user.role,
 			},
 		}),
-		signIn: async ({ user, account, profile }) => {
+		signIn: async ({ user }) => {
 			// Check if user email is in admin list
 			if (user.email && env.ADMIN_EMAILS) {
-				const adminEmails = env.ADMIN_EMAILS.split(',').map(email => email.trim());
+				const adminEmails = env.ADMIN_EMAILS.split(",").map((email) =>
+					email.trim(),
+				);
 				if (adminEmails.includes(user.email)) {
-					// Update user role to ADMIN
-					await db.user.update({
-						where: { email: user.email },
-						data: { role: "ADMIN" },
-					});
+					// Update user role to ADMIN with retry
+					await withRetry(() =>
+						db.user.update({
+							where: { email: user.email! },
+							data: { role: "ADMIN" },
+						}),
+					);
 				}
 			}
 			return true;

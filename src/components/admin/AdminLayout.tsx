@@ -40,7 +40,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)]">
+    <div className="min-h-screen bg-[var(--bg-primary)] flex">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div 
@@ -52,8 +52,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       {/* Sidebar */}
       <div className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-[var(--bg-secondary)] border-r border-[var(--border-primary)] 
-        transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        transform transition-transform duration-300 ease-in-out lg:translate-x-0
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="flex flex-col h-full">
           {/* Logo */}
@@ -119,7 +119,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       </div>
 
       {/* Main content */}
-      <div className="lg:pl-64">
+      <div className="flex-1 lg:ml-64">
         {/* Top bar */}
         <div className="sticky top-0 z-30 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] px-4 py-4">
           <div className="flex items-center justify-between">
@@ -130,7 +130,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               <IoMenu size={24} />
             </button>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 ml-auto">
               <Link href="/" className="pixel-text text-sm hover:text-[var(--neon-cyan)] transition-colors">
                 View Site
               </Link>
