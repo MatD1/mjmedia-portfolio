@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { writeFile, mkdir, stat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharp from 'sharp';
 import { getServerAuthSession } from '~/server/auth';
 import { 
   isMinioConfigured, 
@@ -9,6 +8,20 @@ import {
   listFiles, 
   getContentType 
 } from '~/server/storage';
+
+// Lazy load sharp to avoid crashes if the binary is incompatible
+let sharpModule: typeof import('sharp') | null = null;
+async function getSharp() {
+  if (sharpModule === null) {
+    try {
+      sharpModule = (await import('sharp')).default;
+    } catch (error) {
+      console.error('Failed to load sharp:', error);
+      return null;
+    }
+  }
+  return sharpModule;
+}
 
 export const runtime = 'nodejs';
 
@@ -52,7 +65,13 @@ async function processImage(
   buffer: Buffer, 
   ext: string,
   outputFormat?: 'png' | 'jpeg' | 'webp'
-): Promise<{ buffer: Buffer; ext: string; contentType: string }> {
+): Promise<{ buffer: Buffer; ext: string; contentType: string } | null> {
+  const sharp = await getSharp();
+  if (!sharp) {
+    // Sharp not available, return null to skip processing
+    return null;
+  }
+
   const needsConversion = CONVERT_TO_PNG.has(ext);
   const targetFormat = outputFormat ?? (needsConversion ? 'png' : ext);
   
@@ -169,13 +188,21 @@ export async function POST(request: Request) {
     try {
       const targetFormat = convertTo as 'png' | 'jpeg' | 'webp' | undefined;
       const processed = await processImage(buffer, safeExt, targetFormat);
-      buffer = Buffer.from(processed.buffer);
-      finalExt = processed.ext;
-      contentType = processed.contentType;
-      wasConverted = safeExt !== finalExt;
+      if (processed) {
+        buffer = Buffer.from(processed.buffer);
+        finalExt = processed.ext;
+        contentType = processed.contentType;
+        wasConverted = safeExt !== finalExt;
+      } else if (CONVERT_TO_PNG.has(safeExt)) {
+        // HEIC/HEIF requires conversion but sharp isn't available
+        return new NextResponse('HEIC/HEIF conversion not available. Please convert to PNG/JPEG first.', { status: 400 });
+      }
     } catch (error) {
       console.error('Image processing error:', error);
-      // Continue with original file if processing fails
+      // Continue with original file if processing fails (unless HEIC/HEIF)
+      if (CONVERT_TO_PNG.has(safeExt)) {
+        return new NextResponse('Failed to convert HEIC/HEIF image. Please convert to PNG/JPEG first.', { status: 400 });
+      }
     }
   }
 

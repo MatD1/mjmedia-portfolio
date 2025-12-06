@@ -63,6 +63,9 @@ const config = {
 		],
 	},
 
+	// Ensure native modules are bundled correctly for standalone output
+	serverExternalPackages: ["@prisma/client", "prisma"],
+
 	// Security and caching headers
 	async headers() {
 		return [

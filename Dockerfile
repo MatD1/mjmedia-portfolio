@@ -3,8 +3,8 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Install OS deps needed by Prisma & Next
-RUN apk add --no-cache libc6-compat openssl
+# Install OS deps needed by Prisma, Next.js, and Sharp (image processing)
+RUN apk add --no-cache libc6-compat openssl vips-dev
 
 # ---------------------------------------------------------------------------
 FROM base AS deps
@@ -31,11 +31,15 @@ RUN npx prisma generate
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-FROM base AS runner
+FROM node:20-alpine AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 EXPOSE 3000
+
+# Install runtime deps for Sharp image processing
+RUN apk add --no-cache libc6-compat vips
 
 # Don't run as root
 RUN addgroup --system --gid 1001 nodejs
@@ -47,6 +51,13 @@ COPY --from=builder /app/public ./public
 # Copy standalone build (includes node_modules and server.js)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Explicitly copy Prisma engine binaries (required for Alpine Linux)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+
+# Copy the prisma schema (needed for migrations if run at startup)
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
 USER nextjs
 
