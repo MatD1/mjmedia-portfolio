@@ -76,7 +76,7 @@ const Header: React.FC = () => {
               </div>
             ) : (
               <Link
-                href="/api/auth/signin"
+                href="/auth/signin"
                 className="game-button text-xs"
               >
                 Sign In

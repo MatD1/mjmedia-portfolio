@@ -11,7 +11,7 @@ export default async function AdminLayoutWrapper({
 
   // Redirect to sign in if not authenticated
   if (!session) {
-    redirect('/api/auth/signin');
+    redirect('/auth/signin');
   }
 
   // Redirect to home if not admin
