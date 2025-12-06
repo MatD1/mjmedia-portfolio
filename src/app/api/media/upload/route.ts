@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { writeFile, mkdir, stat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import sharp from 'sharp';
 import { getServerAuthSession } from '~/server/auth';
 import { 
   isMinioConfigured, 
@@ -14,12 +15,23 @@ export const runtime = 'nodejs';
 // Allowed file extensions for security
 const ALLOWED_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg',
+  'heic', 'heif', // iPhone formats - will be converted
   'mp4', 'webm', 'ogg',
   'pdf', 'doc', 'docx',
 ]);
 
-// Max file size: 10MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Extensions that need conversion to web-friendly formats
+const CONVERT_TO_PNG = new Set(['heic', 'heif']);
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif']);
+
+// Max file size: 25MB (larger to accommodate raw iPhone photos)
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
+// Image optimization settings
+const MAX_IMAGE_DIMENSION = 2400; // Max width/height
+const JPEG_QUALITY = 85;
+const PNG_COMPRESSION = 9;
+const WEBP_QUALITY = 85;
 
 async function ensureUploadsDir(dir: string) {
   try {
@@ -28,6 +40,69 @@ async function ensureUploadsDir(dir: string) {
   } catch {
     await mkdir(dir, { recursive: true });
   }
+}
+
+/**
+ * Process and optimize images
+ * - Converts HEIC/HEIF to PNG
+ * - Resizes large images
+ * - Optimizes file size
+ */
+async function processImage(
+  buffer: Buffer, 
+  ext: string,
+  outputFormat?: 'png' | 'jpeg' | 'webp'
+): Promise<{ buffer: Buffer; ext: string; contentType: string }> {
+  const needsConversion = CONVERT_TO_PNG.has(ext);
+  const targetFormat = outputFormat ?? (needsConversion ? 'png' : ext);
+  
+  let pipeline = sharp(buffer, {
+    // Enable HEIF/HEIC support
+    failOn: 'none',
+  });
+
+  // Get image metadata
+  const metadata = await pipeline.metadata();
+  
+  // Resize if too large (maintain aspect ratio)
+  if (metadata.width && metadata.width > MAX_IMAGE_DIMENSION) {
+    pipeline = pipeline.resize(MAX_IMAGE_DIMENSION, undefined, {
+      withoutEnlargement: true,
+      fit: 'inside',
+    });
+  } else if (metadata.height && metadata.height > MAX_IMAGE_DIMENSION) {
+    pipeline = pipeline.resize(undefined, MAX_IMAGE_DIMENSION, {
+      withoutEnlargement: true,
+      fit: 'inside',
+    });
+  }
+
+  // Convert to target format with optimization
+  let outputBuffer: Buffer;
+  let outputExt: string;
+  let contentType: string;
+
+  switch (targetFormat) {
+    case 'jpeg':
+    case 'jpg':
+      outputBuffer = await pipeline.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer();
+      outputExt = 'jpg';
+      contentType = 'image/jpeg';
+      break;
+    case 'webp':
+      outputBuffer = await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer();
+      outputExt = 'webp';
+      contentType = 'image/webp';
+      break;
+    case 'png':
+    default:
+      outputBuffer = await pipeline.png({ compressionLevel: PNG_COMPRESSION }).toBuffer();
+      outputExt = 'png';
+      contentType = 'image/png';
+      break;
+  }
+
+  return { buffer: outputBuffer, ext: outputExt, contentType };
 }
 
 export async function GET() {
@@ -65,13 +140,15 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const file = form.get('file');
+  const convertTo = form.get('convertTo') as string | null; // Optional: 'png', 'jpeg', 'webp'
+  
   if (!file || !(file instanceof File)) {
     return new NextResponse('No file provided', { status: 400 });
   }
 
   // Validate file size
   if (file.size > MAX_FILE_SIZE) {
-    return new NextResponse('File too large. Maximum size is 10MB.', { status: 400 });
+    return new NextResponse('File too large. Maximum size is 25MB.', { status: 400 });
   }
 
   // Validate file extension
@@ -82,15 +159,39 @@ export async function POST(request: Request) {
     return new NextResponse('File type not allowed', { status: 400 });
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
+  let finalExt = safeExt;
+  let contentType = getContentType(safeExt);
+  let wasConverted = false;
+
+  // Process images (convert HEIC/HEIF, optimize, resize)
+  if (IMAGE_EXTENSIONS.has(safeExt) && safeExt !== 'svg' && safeExt !== 'gif') {
+    try {
+      const targetFormat = convertTo as 'png' | 'jpeg' | 'webp' | undefined;
+      const processed = await processImage(buffer, safeExt, targetFormat);
+      buffer = Buffer.from(processed.buffer);
+      finalExt = processed.ext;
+      contentType = processed.contentType;
+      wasConverted = safeExt !== finalExt;
+    } catch (error) {
+      console.error('Image processing error:', error);
+      // Continue with original file if processing fails
+    }
+  }
+
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${finalExt}`;
 
   // Use Minio if configured, otherwise use local storage
   if (isMinioConfigured) {
     try {
-      const contentType = getContentType(safeExt);
       const url = await uploadFile(buffer, filename, contentType);
-      return NextResponse.json({ url, filename, storage: 'minio' });
+      return NextResponse.json({ 
+        url, 
+        filename, 
+        storage: 'minio',
+        converted: wasConverted,
+        originalFormat: wasConverted ? safeExt : undefined,
+      });
     } catch (error) {
       console.error('Minio upload error:', error);
       return new NextResponse('Failed to upload to storage', { status: 500 });
@@ -104,7 +205,13 @@ export async function POST(request: Request) {
   await writeFile(filepath, buffer);
 
   const url = `/uploads/${filename}`;
-  return NextResponse.json({ url, filename, storage: 'local' });
+  return NextResponse.json({ 
+    url, 
+    filename, 
+    storage: 'local',
+    converted: wasConverted,
+    originalFormat: wasConverted ? safeExt : undefined,
+  });
 }
 
 
