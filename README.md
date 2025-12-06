@@ -101,6 +101,12 @@ NODE_ENV="development"
 # DB_CONNECT_MAX_ATTEMPTS="10"
 # DB_CONNECT_BASE_DELAY_MS="1000"
 # DB_CONNECT_MAX_DELAY_MS="15000"
+
+# (Optional) Minio/S3 Storage for persistent file uploads
+# MINIO_ENDPOINT="https://minio.example.com"
+# MINIO_ACCESS_KEY="your-access-key"
+# MINIO_SECRET_KEY="your-secret-key"
+# MINIO_BUCKET="uploads"
 ```
 
 ### Railway-Specific Configuration
@@ -137,6 +143,20 @@ When deploying to Railway with a PostgreSQL database, use these recommended sett
 1. Deploy Umami to your preferred platform or use the hosted version
 2. Create a new website in Umami
 3. Generate an API token in your Umami settings
+
+### Setting up Minio Storage (Optional)
+
+For persistent file uploads in containerized deployments (Railway, Docker, etc.), configure Minio or any S3-compatible storage:
+
+1. Set up a Minio server or use an existing S3-compatible service
+2. Create a bucket (e.g., `uploads`) and set it to public read access
+3. Add the following environment variables:
+   - `MINIO_ENDPOINT`: Full URL to your Minio server (e.g., `https://minio.example.com`)
+   - `MINIO_ACCESS_KEY`: Your Minio access key
+   - `MINIO_SECRET_KEY`: Your Minio secret key
+   - `MINIO_BUCKET`: The bucket name (e.g., `uploads`)
+
+**Note**: If Minio is not configured, the app falls back to local file storage (files stored in `public/uploads/`). Local storage is ephemeral in containerized deployments.
 4. Add the Umami tracking script to your site (already included in the layout)
 
 ## 🐳 Docker Support

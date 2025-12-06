@@ -115,7 +115,7 @@ const Footer: React.FC = () => {
               <span>•</span>
               <span>Styled with Tailwind</span>
               <span>•</span>
-              <span>Deployed on Vercel</span>
+              <span>Deployed on Railway</span>
             </div>
           </div>
         </div>

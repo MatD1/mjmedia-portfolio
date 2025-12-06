@@ -171,8 +171,8 @@ export default function HomePageClient({ featuredProjects, latestBlogs }: HomePa
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 viewport={{ once: true }}
               >
-                <Card className="h-full group">
-                  <Link href={`/projects/${project.id}`} className="block">
+                <Link href={`/projects/${project.id}`} className="block h-full">
+                  <Card className="h-full group hover:border-[var(--neon-cyan)] transition-colors">
                     <div className="space-y-4">
                       {project.images[0] && (
                         <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
@@ -214,8 +214,8 @@ export default function HomePageClient({ featuredProjects, latestBlogs }: HomePa
                         </div>
                       </div>
                     </div>
-                  </Link>
-                </Card>
+                  </Card>
+                </Link>
               </motion.div>
             ))}
           </div>
@@ -264,8 +264,8 @@ export default function HomePageClient({ featuredProjects, latestBlogs }: HomePa
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 viewport={{ once: true }}
               >
-                <Card className="h-full group">
-                  <Link href={`/blog/${blog.id}`} className="block">
+                <Link href={`/blog/${blog.id}`} className="block h-full">
+                  <Card className="h-full group hover:border-[var(--neon-pink)] transition-colors">
                     <div className="space-y-4">
                       {blog.coverImage && (
                         <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
@@ -311,8 +311,8 @@ export default function HomePageClient({ featuredProjects, latestBlogs }: HomePa
                         </div>
                       </div>
                     </div>
-                  </Link>
-                </Card>
+                  </Card>
+                </Link>
               </motion.div>
             ))}
           </div>
