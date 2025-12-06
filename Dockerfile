@@ -4,13 +4,16 @@ FROM node:20-alpine AS base
 WORKDIR /app
 
 # Install OS deps needed by Prisma, Next.js, and Sharp (image processing)
-RUN apk add --no-cache libc6-compat openssl vips-dev
+# vips-dev includes headers needed for sharp to build from source
+# python3, make, g++ are build tools needed by node-gyp
+RUN apk add --no-cache libc6-compat openssl vips-dev python3 make g++
 
 # ---------------------------------------------------------------------------
 FROM base AS deps
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 # Install all dependencies (dev + prod) for the build
+# Sharp may need to build from source on Alpine
 RUN npm ci
 
 # ---------------------------------------------------------------------------
