@@ -26,6 +26,7 @@ export const env = createEnv({
 		// Minio/S3 storage (using MINIMO_ prefix as per .env file)
 		MINIMO_URL: z.string().optional(), // Console URL (optional, used for public URLs)
 		MINIMO_API_URL: z.string().optional(), // API endpoint URL (required for S3 operations)
+		// For Railway: Use internal service name like "minio.railway.internal:9000" or public URL
 		MINIMO_PORT: z.string().optional(), // Optional port override (for Railway proxy ports like 9090)
 		MINIMO_ACCESS_KEY: z.string().optional(),
 		MINIMO_ACCESS_SECRET: z.string().optional(),

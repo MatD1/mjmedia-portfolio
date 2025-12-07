@@ -160,13 +160,14 @@ async function getS3Client() {
 		
 		const { endpoint } = parseEndpoint(apiEndpoint);
 		
-		// Log the endpoint being used (only in development)
-		if (process.env.NODE_ENV === 'development') {
-			console.log(`[Minio] Connecting to API endpoint: ${endpoint}`);
-			console.log(`[Minio] Bucket: ${bucketName}`);
-			if (env.MINIMO_PORT) {
-				console.log(`[Minio] Using port override: ${env.MINIMO_PORT}`);
-			}
+		// Log the endpoint being used (helpful for debugging)
+		console.log(`[Minio] Connecting to API endpoint: ${endpoint}`);
+		console.log(`[Minio] Bucket: ${bucketName}`);
+		if (env.MINIMO_PORT) {
+			console.log(`[Minio] Using port override: ${env.MINIMO_PORT}`);
+		}
+		if (endpoint.includes('railway')) {
+			console.log(`[Minio] Railway detected - if timeout occurs, try using internal service name (e.g., minio.railway.internal:9000)`);
 		}
 		
 		s3ClientInstance = new S3Client({
@@ -177,6 +178,8 @@ async function getS3Client() {
 				secretAccessKey: env.MINIMO_ACCESS_SECRET!,
 			},
 			forcePathStyle: true, // Required for Minio - uses path-style URLs
+			// Note: AWS SDK v3 handles timeouts internally, but Railway networking
+			// might require using internal service names instead of public URLs
 		});
 	}
 	
@@ -295,9 +298,18 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 		if (errorMessage.includes('InvalidAccessKeyId') || errorMessage.includes('SignatureDoesNotMatch')) {
 			throw new Error(`Invalid Minio credentials. Please check your MINIMO_ACCESS_KEY and MINIMO_ACCESS_SECRET.`);
 		}
-		if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
+		if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
 			const apiEndpoint = getApiEndpoint();
-			throw new Error(`Cannot connect to Minio API endpoint. Please check your MINIMO_API_URL or MINIMO_URL setting. Current API endpoint: ${apiEndpoint ?? 'not configured'}`);
+			throw new Error(
+				`Connection timeout or refused when connecting to Minio API endpoint.\n` +
+				`This often happens with Railway when:\n` +
+				`1. Using public URL instead of internal service name\n` +
+				`2. Port configuration is incorrect\n` +
+				`3. Service is not accessible from your app's network\n\n` +
+				`Current API endpoint: ${apiEndpoint ?? 'not configured'}\n` +
+				`For Railway: Try using the internal service name (e.g., minio.railway.internal:9000) ` +
+				`or check Railway's networking settings to ensure services can communicate.`
+			);
 		}
 		throw new Error(`Failed to list files from Minio: ${detailedError}`);
 	}
