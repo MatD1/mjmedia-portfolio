@@ -37,6 +37,12 @@ async function loadS3SDK() {
 /**
  * Get the Minio API endpoint URL
  * Uses MINIMO_API_URL if provided, otherwise tries to derive from MINIMO_URL
+ * 
+ * Note: Minio has two endpoints:
+ * - Console: Port 9001 (web UI) - returns HTML/JSON
+ * - API: Port 9000 (S3 API) - returns XML
+ * 
+ * The S3 SDK requires the API endpoint (port 9000), not the console.
  */
 function getApiEndpoint(): string | null {
 	// If API URL is explicitly provided, use it
@@ -48,9 +54,11 @@ function getApiEndpoint(): string | null {
 	if (env.MINIMO_URL) {
 		try {
 			const url = new URL(env.MINIMO_URL);
-			// For Railway deployments, API is often on the same domain but port 9000
-			// Or it might be a different subdomain
-			// Try common patterns:
+			
+			// For Railway deployments, the API endpoint might be:
+			// 1. Same domain but different port (9000)
+			// 2. Different subdomain (api-* instead of console-*)
+			// 3. Same domain but different path
 			
 			// Pattern 1: Replace 'console' with 'api' in subdomain
 			if (url.hostname.includes('console')) {
@@ -58,7 +66,12 @@ function getApiEndpoint(): string | null {
 				return `${url.protocol}//${apiHostname}`;
 			}
 			
-			// Pattern 2: Use same host but with port 9000
+			// Pattern 2: If URL already has a port, replace it with 9000
+			if (url.port) {
+				return `${url.protocol}//${url.hostname}:9000`;
+			}
+			
+			// Pattern 3: Add port 9000 to hostname
 			return `${url.protocol}//${url.hostname}:9000`;
 		} catch {
 			// If URL parsing fails, return the original
@@ -128,6 +141,13 @@ async function getS3Client() {
 		}
 		
 		const { endpoint } = parseEndpoint(apiEndpoint);
+		
+		// Log the endpoint being used (only in development)
+		if (process.env.NODE_ENV === 'development') {
+			console.log(`[Minio] Connecting to API endpoint: ${endpoint}`);
+			console.log(`[Minio] Bucket: ${bucketName}`);
+		}
+		
 		s3ClientInstance = new S3Client({
 			endpoint, // Minio API endpoint (e.g., https://api.example.com:9000)
 			region: "us-east-1", // Minio doesn't care about region, but SDK requires it
@@ -208,6 +228,43 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 		}));
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		
+		// Try to extract more details from the error
+		let detailedError = errorMessage;
+		if (error && typeof error === 'object' && '$response' in error) {
+			const response = (error as { $response?: { body?: string; statusCode?: number } }).$response;
+			if (response?.body) {
+				try {
+					// If the response is JSON (error page), try to parse it
+					const jsonBody = typeof response.body === 'string' ? JSON.parse(response.body) : response.body;
+					if (jsonBody.error || jsonBody.message) {
+						detailedError = `${errorMessage} - Server response: ${jsonBody.error || jsonBody.message}`;
+					}
+				} catch {
+					// If it's not JSON, include the raw body if it's a string
+					if (typeof response.body === 'string' && response.body.length < 500) {
+						detailedError = `${errorMessage} - Server response: ${response.body}`;
+					}
+				}
+			}
+			if (response?.statusCode) {
+				detailedError += ` (HTTP ${response.statusCode})`;
+			}
+		}
+		
+		// Check for deserialization errors (JSON response instead of XML)
+		if (errorMessage.includes('Deserialization error') || errorMessage.includes('char') || errorMessage.includes('is not expected')) {
+			const apiEndpoint = getApiEndpoint();
+			throw new Error(
+				`Minio endpoint returned an unexpected response format. This usually means:\n` +
+				`1. The endpoint URL is pointing to the console (port 9001) instead of the API (port 9000)\n` +
+				`2. The endpoint requires a different path (e.g., /minio or /api)\n` +
+				`3. The endpoint is behind a proxy returning an error page\n\n` +
+				`Current API endpoint: ${apiEndpoint ?? 'not configured'}\n` +
+				`Please verify your MINIMO_API_URL points to the Minio S3 API endpoint (typically port 9000), not the console.`
+			);
+		}
+		
 		// Provide more helpful error messages
 		if (errorMessage.includes('NoSuchBucket') || errorMessage.includes('does not exist')) {
 			throw new Error(`Bucket "${bucketName}" does not exist. Please create it first or check your MINIMO_STORAGE_BUCKET setting.`);
@@ -219,7 +276,7 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 			const apiEndpoint = getApiEndpoint();
 			throw new Error(`Cannot connect to Minio API endpoint. Please check your MINIMO_API_URL or MINIMO_URL setting. Current API endpoint: ${apiEndpoint ?? 'not configured'}`);
 		}
-		throw new Error(`Failed to list files from Minio: ${errorMessage}`);
+		throw new Error(`Failed to list files from Minio: ${detailedError}`);
 	}
 }
 
