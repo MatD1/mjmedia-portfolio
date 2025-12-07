@@ -42,10 +42,13 @@ async function loadS3SDK() {
  * - Console: Port 9001 (web UI) - returns HTML/JSON
  * - API: Port 9000 (S3 API) - returns XML
  * 
- * The S3 SDK requires the API endpoint (port 9000), not the console.
+ * For Railway deployments:
+ * - Railway often exposes services via public URLs without ports (routing handled internally)
+ * - If MINIMO_PORT is set (e.g., 9090 for Railway proxy), use that
+ * - Otherwise, try to use the same URL without adding a port (Railway handles routing)
  */
 function getApiEndpoint(): string | null {
-	// If API URL is explicitly provided, use it
+	// If API URL is explicitly provided, use it (may include port or not)
 	if (env.MINIMO_API_URL) {
 		return env.MINIMO_API_URL;
 	}
@@ -55,24 +58,39 @@ function getApiEndpoint(): string | null {
 		try {
 			const url = new URL(env.MINIMO_URL);
 			
-			// For Railway deployments, the API endpoint might be:
-			// 1. Same domain but different port (9000)
-			// 2. Different subdomain (api-* instead of console-*)
-			// 3. Same domain but different path
+			// For Railway deployments:
+			// - If MINIMO_PORT is set, use it (e.g., 9090 for proxy)
+			// - If URL has a port, keep it or replace based on context
+			// - If no port, Railway handles routing - use same URL
 			
-			// Pattern 1: Replace 'console' with 'api' in subdomain
+			// Pattern 1: If MINIMO_PORT is explicitly set, use it
+			if (env.MINIMO_PORT) {
+				return `${url.protocol}//${url.hostname}:${env.MINIMO_PORT}`;
+			}
+			
+			// Pattern 2: Replace 'console' with 'api' in subdomain (keep existing port if any)
 			if (url.hostname.includes('console')) {
 				const apiHostname = url.hostname.replace('console', 'api');
-				return `${url.protocol}//${apiHostname}`;
+				// Keep port if it exists, otherwise don't add one (Railway routing)
+				return url.port 
+					? `${url.protocol}//${apiHostname}:${url.port}`
+					: `${url.protocol}//${apiHostname}`;
 			}
 			
-			// Pattern 2: If URL already has a port, replace it with 9000
+			// Pattern 3: For Railway, if URL has no port, don't add one (Railway handles routing)
+			// If it has a port, try replacing with 9000 (standard Minio API port)
 			if (url.port) {
-				return `${url.protocol}//${url.hostname}:9000`;
+				// If port is 9001 (console), replace with 9000 (API)
+				if (url.port === '9001') {
+					return `${url.protocol}//${url.hostname}:9000`;
+				}
+				// Otherwise keep the existing port
+				return env.MINIMO_URL;
 			}
 			
-			// Pattern 3: Add port 9000 to hostname
-			return `${url.protocol}//${url.hostname}:9000`;
+			// Pattern 4: No port specified - Railway handles routing, use same URL
+			// This is common for Railway deployments where the public URL routes internally
+			return env.MINIMO_URL;
 		} catch {
 			// If URL parsing fails, return the original
 			return env.MINIMO_URL;
@@ -146,6 +164,9 @@ async function getS3Client() {
 		if (process.env.NODE_ENV === 'development') {
 			console.log(`[Minio] Connecting to API endpoint: ${endpoint}`);
 			console.log(`[Minio] Bucket: ${bucketName}`);
+			if (env.MINIMO_PORT) {
+				console.log(`[Minio] Using port override: ${env.MINIMO_PORT}`);
+			}
 		}
 		
 		s3ClientInstance = new S3Client({
@@ -258,10 +279,12 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 			throw new Error(
 				`Minio endpoint returned an unexpected response format. This usually means:\n` +
 				`1. The endpoint URL is pointing to the console (port 9001) instead of the API (port 9000)\n` +
-				`2. The endpoint requires a different path (e.g., /minio or /api)\n` +
-				`3. The endpoint is behind a proxy returning an error page\n\n` +
+				`2. For Railway: The endpoint might need a proxy port (set MINIMO_PORT=9090 if Railway uses port 9090)\n` +
+				`3. The endpoint requires a different path (e.g., /minio or /api)\n` +
+				`4. The endpoint is behind a proxy returning an error page\n\n` +
 				`Current API endpoint: ${apiEndpoint ?? 'not configured'}\n` +
-				`Please verify your MINIMO_API_URL points to the Minio S3 API endpoint (typically port 9000), not the console.`
+				`Current port override: ${env.MINIMO_PORT ?? 'none'}\n` +
+				`For Railway: Try setting MINIMO_PORT=9090 or use the Railway public URL without a port (Railway handles routing internally).`
 			);
 		}
 		

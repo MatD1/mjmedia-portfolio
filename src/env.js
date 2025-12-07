@@ -25,7 +25,8 @@ export const env = createEnv({
 		ADMIN_EMAILS: z.string().optional(), // comma-separated list of admin emails
 		// Minio/S3 storage (using MINIMO_ prefix as per .env file)
 		MINIMO_URL: z.string().optional(), // Console URL (optional, used for public URLs)
-		MINIMO_API_URL: z.string().optional(), // API endpoint URL (required for S3 operations, typically port 9000)
+		MINIMO_API_URL: z.string().optional(), // API endpoint URL (required for S3 operations)
+		MINIMO_PORT: z.string().optional(), // Optional port override (for Railway proxy ports like 9090)
 		MINIMO_ACCESS_KEY: z.string().optional(),
 		MINIMO_ACCESS_SECRET: z.string().optional(),
 		MINIMO_STORAGE_BUCKET: z.string().optional(),
@@ -56,6 +57,7 @@ export const env = createEnv({
 		ADMIN_EMAILS: process.env.ADMIN_EMAILS,
 		MINIMO_URL: process.env.MINIMO_URL,
 		MINIMO_API_URL: process.env.MINIMO_API_URL,
+		MINIMO_PORT: process.env.MINIMO_PORT,
 		MINIMO_ACCESS_KEY: process.env.MINIMO_ACCESS_KEY,
 		MINIMO_ACCESS_SECRET: process.env.MINIMO_ACCESS_SECRET,
 		MINIMO_STORAGE_BUCKET: process.env.MINIMO_STORAGE_BUCKET,
