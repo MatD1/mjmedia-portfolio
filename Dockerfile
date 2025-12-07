@@ -5,17 +5,23 @@ WORKDIR /app
 
 # Install OS deps needed by Prisma, Next.js, and Sharp (image processing)
 # vips-dev includes headers needed for sharp to build from source
-# libheif-dev provides HEIC/HEIF support for sharp
+# libheif-dev provides HEIC/HEIF support for sharp (from edge repo)
 # python3, make, g++ are build tools needed by node-gyp
-RUN apk add --no-cache libc6-compat openssl vips-dev libheif-dev python3 make g++
+RUN apk add --no-cache libc6-compat openssl vips-dev python3 make g++ && \
+    apk add --no-cache libheif-dev --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community
 
 # ---------------------------------------------------------------------------
 FROM base AS deps
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 # Install all dependencies (dev + prod) for the build
-# Sharp may need to build from source on Alpine
+# Force sharp to build from source with HEIF support
+ENV npm_config_build_from_source=true
+ENV npm_config_sharp_binary_host=""
+ENV npm_config_sharp_libvips_binary_host=""
 RUN npm ci
+# Ensure sharp is rebuilt with HEIF support (remove pre-built binary first)
+RUN rm -rf node_modules/sharp && npm rebuild sharp --build-from-source || npm install sharp --build-from-source
 
 # ---------------------------------------------------------------------------
 FROM base AS builder
@@ -43,7 +49,8 @@ ENV HOSTNAME="0.0.0.0"
 EXPOSE 3000
 
 # Install runtime deps for Sharp image processing (including HEIC/HEIF support)
-RUN apk add --no-cache libc6-compat vips libheif
+RUN apk add --no-cache libc6-compat vips && \
+    apk add --no-cache libheif --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community
 
 # Don't run as root
 RUN addgroup --system --gid 1001 nodejs
