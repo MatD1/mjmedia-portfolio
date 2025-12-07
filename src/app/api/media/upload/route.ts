@@ -10,11 +10,28 @@ import {
 } from '~/server/storage';
 
 // Lazy load sharp to avoid crashes if the binary is incompatible
-let sharpModule: typeof import('sharp') | null = null;
-async function getSharp() {
+// Using dynamic import to avoid build-time errors if sharp isn't available
+type SharpInstance = {
+  (input?: Buffer | string, options?: { failOn?: string }): SharpPipeline;
+  [key: string]: unknown;
+};
+
+type SharpPipeline = {
+  metadata(): Promise<{ width?: number; height?: number; format?: string }>;
+  resize(width?: number, height?: number, options?: { withoutEnlargement?: boolean; fit?: string }): SharpPipeline;
+  jpeg(options?: { quality?: number; mozjpeg?: boolean }): SharpPipeline;
+  webp(options?: { quality?: number }): SharpPipeline;
+  png(options?: { compressionLevel?: number }): SharpPipeline;
+  toBuffer(): Promise<Buffer>;
+};
+
+let sharpModule: SharpInstance | null = null;
+async function getSharp(): Promise<SharpInstance | null> {
   if (sharpModule === null) {
     try {
-      sharpModule = (await import('sharp')).default;
+      // Dynamic import to avoid TypeScript errors during build
+      const sharpImport = await import('sharp');
+      sharpModule = (sharpImport.default || sharpImport) as unknown as SharpInstance;
     } catch (error) {
       console.error('Failed to load sharp:', error);
       return null;

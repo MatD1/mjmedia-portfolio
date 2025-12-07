@@ -19,9 +19,13 @@ COPY prisma ./prisma
 ENV npm_config_build_from_source=true
 ENV npm_config_sharp_binary_host=""
 ENV npm_config_sharp_libvips_binary_host=""
+# Install dependencies
+# Note: npm_config_build_from_source may not work reliably, so we'll try rebuilding after
 RUN npm ci
-# Ensure sharp is rebuilt with HEIF support (remove pre-built binary first)
-RUN rm -rf node_modules/sharp && npm rebuild sharp --build-from-source || npm install sharp --build-from-source
+# Verify sharp is installed
+RUN test -d node_modules/sharp || (echo "ERROR: sharp not installed" && exit 1)
+# Attempt to rebuild sharp with HEIF support (optional - won't fail build if it doesn't work)
+RUN (cd node_modules/sharp && npm run install 2>&1 | head -20) || true
 
 # ---------------------------------------------------------------------------
 FROM base AS builder
