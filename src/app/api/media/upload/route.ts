@@ -174,22 +174,52 @@ export async function GET() {
         const items = await listFiles();
         return NextResponse.json({ items, storage: 'minio' });
       } catch (error) {
-        console.error('Minio list error:', error);
-        return NextResponse.json({ error: 'Failed to list files from storage', items: [] }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Minio list error:', errorMessage, error);
+        
+        // Check if it's a configuration issue
+        if (errorMessage.includes('not configured') || errorMessage.includes('failed to load')) {
+          return NextResponse.json({ 
+            error: 'Storage is not properly configured. Please check your Minio settings.', 
+            items: [],
+            storage: 'minio',
+            configError: true
+          }, { status: 500 });
+        }
+        
+        return NextResponse.json({ 
+          error: `Failed to list files from storage: ${errorMessage}`, 
+          items: [],
+          storage: 'minio'
+        }, { status: 500 });
       }
     }
 
     // Fallback to local storage
-    const uploadsDir = join(process.cwd(), 'public', 'uploads');
-    await ensureUploadsDir(uploadsDir);
-    const files = await readdir(uploadsDir);
-    const items = files
-      .filter((f) => !f.startsWith('.'))
-      .map((f) => ({ filename: f, url: `/uploads/${f}` }));
-    return NextResponse.json({ items, storage: 'local' });
+    try {
+      const uploadsDir = join(process.cwd(), 'public', 'uploads');
+      await ensureUploadsDir(uploadsDir);
+      const files = await readdir(uploadsDir);
+      const items = files
+        .filter((f) => !f.startsWith('.'))
+        .map((f) => ({ filename: f, url: `/uploads/${f}` }));
+      return NextResponse.json({ items, storage: 'local' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Local storage list error:', errorMessage, error);
+      return NextResponse.json({ 
+        error: `Failed to list local files: ${errorMessage}`, 
+        items: [],
+        storage: 'local'
+      }, { status: 500 });
+    }
   } catch (error) {
-    console.error('GET /api/media/upload error:', error);
-    return NextResponse.json({ error: 'Internal server error', items: [] }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('GET /api/media/upload error:', errorMessage, error);
+    return NextResponse.json({ 
+      error: `Internal server error: ${errorMessage}`, 
+      items: [] 
+    }, { status: 500 });
   }
 }
 

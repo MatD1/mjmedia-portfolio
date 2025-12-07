@@ -110,23 +110,42 @@ export async function uploadFile(
  * List all files in the bucket
  */
 export async function listFiles(): Promise<Array<{ filename: string; url: string; size?: number }>> {
-	const client = await getS3Client();
-	if (!client || !ListObjectsV2Command) {
-		throw new Error("Minio storage is not configured or failed to load");
+	if (!isMinioConfigured) {
+		throw new Error("Minio storage is not configured. Please set MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, and MINIO_BUCKET environment variables.");
 	}
 
-	const command = new ListObjectsV2Command({
-		Bucket: bucketName,
-	});
+	const client = await getS3Client();
+	if (!client || !ListObjectsV2Command) {
+		throw new Error("Failed to initialize Minio client. Please check your configuration and ensure @aws-sdk/client-s3 is installed.");
+	}
 
-	const response = await client.send(command);
-	const { endpoint } = parseEndpoint(env.MINIO_ENDPOINT!);
+	try {
+		const command = new ListObjectsV2Command({
+			Bucket: bucketName,
+		});
 
-	return (response.Contents ?? []).map((item) => ({
-		filename: item.Key ?? "",
-		url: `${endpoint}/${bucketName}/${item.Key}`,
-		size: item.Size,
-	}));
+		const response = await client.send(command);
+		const { endpoint } = parseEndpoint(env.MINIO_ENDPOINT!);
+
+		return (response.Contents ?? []).map((item) => ({
+			filename: item.Key ?? "",
+			url: `${endpoint}/${bucketName}/${item.Key}`,
+			size: item.Size,
+		}));
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		// Provide more helpful error messages
+		if (errorMessage.includes('NoSuchBucket') || errorMessage.includes('does not exist')) {
+			throw new Error(`Bucket "${bucketName}" does not exist. Please create it first or check your MINIO_BUCKET setting.`);
+		}
+		if (errorMessage.includes('InvalidAccessKeyId') || errorMessage.includes('SignatureDoesNotMatch')) {
+			throw new Error(`Invalid Minio credentials. Please check your MINIO_ACCESS_KEY and MINIO_SECRET_KEY.`);
+		}
+		if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
+			throw new Error(`Cannot connect to Minio endpoint. Please check your MINIO_ENDPOINT setting: ${env.MINIO_ENDPOINT}`);
+		}
+		throw new Error(`Failed to list files from Minio: ${errorMessage}`);
+	}
 }
 
 /**

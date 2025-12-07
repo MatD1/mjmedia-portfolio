@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import Card from '~/components/ui/Card';
 import Button from '~/components/ui/Button';
 import Badge from '~/components/ui/Badge';
+import MediaPreview from '~/components/admin/MediaPreview';
 import { api } from '~/trpc/react';
 
 const blogSchema = z.object({
@@ -35,11 +36,14 @@ export default function NewBlogPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
 
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
+
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
     watch,
+    setValue,
   } = useForm<BlogFormData>({
     resolver: zodResolver(blogSchema),
     defaultValues: {
@@ -76,6 +80,62 @@ export default function NewBlogPage() {
   };
 
   const content = watch('content');
+
+  // Insert image markdown at cursor position
+  const handleInsertImage = (url: string, alt?: string) => {
+    const textarea = contentTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentContent = content || '';
+    
+    const altText = alt || 'image';
+    const imageMarkdown = `![${altText}](${url})`;
+    
+    const newContent = 
+      currentContent.slice(0, start) + 
+      imageMarkdown + 
+      currentContent.slice(end);
+    
+    setValue('content', newContent);
+    
+    // Set cursor position after inserted markdown
+    setTimeout(() => {
+      const newPosition = start + imageMarkdown.length;
+      textarea.setSelectionRange(newPosition, newPosition);
+      textarea.focus();
+    }, 0);
+  };
+
+  // Insert link markdown at cursor position
+  const handleInsertLink = (url: string, text?: string) => {
+    const textarea = contentTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentContent = content || '';
+    
+    // If text is selected, use it as link text, otherwise use provided text or URL
+    const selectedText = currentContent.slice(start, end);
+    const linkText = selectedText || text || url;
+    const linkMarkdown = `[${linkText}](${url})`;
+    
+    const newContent = 
+      currentContent.slice(0, start) + 
+      linkMarkdown + 
+      currentContent.slice(end);
+    
+    setValue('content', newContent);
+    
+    // Set cursor position after inserted markdown
+    setTimeout(() => {
+      const newPosition = start + linkMarkdown.length;
+      textarea.setSelectionRange(newPosition, newPosition);
+      textarea.focus();
+    }, 0);
+  };
 
   return (
     <div className="space-y-8">
@@ -169,6 +229,10 @@ export default function NewBlogPage() {
                   </label>
                   <textarea
                     {...register('content')}
+                    ref={(e) => {
+                      register('content').ref(e);
+                      contentTextareaRef.current = e;
+                    }}
                     rows={12}
                     className="w-full px-4 py-3 bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded text-[var(--text-primary)] focus:outline-none focus:border-[var(--neon-cyan)] focus:ring-2 focus:ring-[var(--neon-cyan)]/20 font-mono text-sm"
                     placeholder="Write your blog post content in Markdown..."
@@ -238,6 +302,13 @@ export default function NewBlogPage() {
                 </div>
               </div>
             </Card>
+
+            {/* Media Library */}
+            <MediaPreview
+              onInsertImage={handleInsertImage}
+              onInsertLink={handleInsertLink}
+              className="mb-6"
+            />
 
             {/* Settings */}
             <Card className="p-6">

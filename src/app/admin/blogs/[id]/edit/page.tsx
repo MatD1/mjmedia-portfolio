@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -19,6 +19,7 @@ import Card from '~/components/ui/Card';
 import Button from '~/components/ui/Button';
 import Badge from '~/components/ui/Badge';
 import Loading from '~/components/ui/Loading';
+import MediaPreview from '~/components/admin/MediaPreview';
 import { api } from '~/trpc/react';
 
 const blogSchema = z.object({
@@ -38,6 +39,7 @@ export default function EditBlogPage() {
   
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
     register,
@@ -45,6 +47,7 @@ export default function EditBlogPage() {
     formState: { errors, isSubmitting },
     reset,
     watch,
+    setValue,
   } = useForm<BlogFormData>({
     resolver: zodResolver(blogSchema),
   });
@@ -98,6 +101,62 @@ export default function EditBlogPage() {
   };
 
   const content = watch('content');
+
+  // Insert image markdown at cursor position
+  const handleInsertImage = (url: string, alt?: string) => {
+    const textarea = contentTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentContent = content || '';
+    
+    const altText = alt || 'image';
+    const imageMarkdown = `![${altText}](${url})`;
+    
+    const newContent = 
+      currentContent.slice(0, start) + 
+      imageMarkdown + 
+      currentContent.slice(end);
+    
+    setValue('content', newContent);
+    
+    // Set cursor position after inserted markdown
+    setTimeout(() => {
+      const newPosition = start + imageMarkdown.length;
+      textarea.setSelectionRange(newPosition, newPosition);
+      textarea.focus();
+    }, 0);
+  };
+
+  // Insert link markdown at cursor position
+  const handleInsertLink = (url: string, text?: string) => {
+    const textarea = contentTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentContent = content || '';
+    
+    // If text is selected, use it as link text, otherwise use provided text or URL
+    const selectedText = currentContent.slice(start, end);
+    const linkText = selectedText || text || url;
+    const linkMarkdown = `[${linkText}](${url})`;
+    
+    const newContent = 
+      currentContent.slice(0, start) + 
+      linkMarkdown + 
+      currentContent.slice(end);
+    
+    setValue('content', newContent);
+    
+    // Set cursor position after inserted markdown
+    setTimeout(() => {
+      const newPosition = start + linkMarkdown.length;
+      textarea.setSelectionRange(newPosition, newPosition);
+      textarea.focus();
+    }, 0);
+  };
 
   if (isLoading) {
     return <Loading text="Loading blog post..." />;
@@ -209,6 +268,10 @@ export default function EditBlogPage() {
                   </label>
                   <textarea
                     {...register('content')}
+                    ref={(e) => {
+                      register('content').ref(e);
+                      contentTextareaRef.current = e;
+                    }}
                     rows={12}
                     className="w-full px-4 py-3 bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded text-[var(--text-primary)] focus:outline-none focus:border-[var(--neon-cyan)] focus:ring-2 focus:ring-[var(--neon-cyan)]/20 font-mono text-sm"
                     placeholder="Write your blog post content in Markdown..."
@@ -286,6 +349,13 @@ export default function EditBlogPage() {
                 </div>
               </div>
             </Card>
+
+            {/* Media Library */}
+            <MediaPreview
+              onInsertImage={handleInsertImage}
+              onInsertLink={handleInsertLink}
+              className="mb-6"
+            />
 
             {/* Settings */}
             <Card className="p-6">
