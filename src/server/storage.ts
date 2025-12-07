@@ -1,5 +1,17 @@
 import { env } from "~/env";
 
+/**
+ * Minio Storage Implementation using AWS S3 SDK
+ * 
+ * Minio is S3-compatible, so we use the official AWS S3 SDK (@aws-sdk/client-s3)
+ * which provides full compatibility with Minio's S3 API.
+ * 
+ * Key configuration:
+ * - forcePathStyle: true (required for Minio)
+ * - Custom endpoint: points to Minio API endpoint (typically port 9000)
+ * - Region: "us-east-1" (Minio doesn't care, but SDK requires it)
+ */
+
 // Lazy-load AWS SDK to avoid crashes if it has issues
 let S3Client: typeof import("@aws-sdk/client-s3").S3Client | null = null;
 let PutObjectCommand: typeof import("@aws-sdk/client-s3").PutObjectCommand | null = null;
@@ -22,21 +34,70 @@ async function loadS3SDK() {
 	return true;
 }
 
+/**
+ * Get the Minio API endpoint URL
+ * Uses MINIMO_API_URL if provided, otherwise tries to derive from MINIMO_URL
+ */
+function getApiEndpoint(): string | null {
+	// If API URL is explicitly provided, use it
+	if (env.MINIMO_API_URL) {
+		return env.MINIMO_API_URL;
+	}
+	
+	// If only console URL is provided, try to derive API endpoint
+	if (env.MINIMO_URL) {
+		try {
+			const url = new URL(env.MINIMO_URL);
+			// For Railway deployments, API is often on the same domain but port 9000
+			// Or it might be a different subdomain
+			// Try common patterns:
+			
+			// Pattern 1: Replace 'console' with 'api' in subdomain
+			if (url.hostname.includes('console')) {
+				const apiHostname = url.hostname.replace('console', 'api');
+				return `${url.protocol}//${apiHostname}`;
+			}
+			
+			// Pattern 2: Use same host but with port 9000
+			return `${url.protocol}//${url.hostname}:9000`;
+		} catch {
+			// If URL parsing fails, return the original
+			return env.MINIMO_URL;
+		}
+	}
+	
+	return null;
+}
+
+/**
+ * Get the public URL for file access (uses console URL or API URL)
+ */
+function getPublicUrl(): string | null {
+	if (env.MINIMO_URL) {
+		return env.MINIMO_URL;
+	}
+	return getApiEndpoint();
+}
+
 // Check if Minio is configured
 export const isMinioConfigured = Boolean(
-	env.MINIMO_URL &&
+	(env.MINIMO_API_URL || env.MINIMO_URL) &&
 	env.MINIMO_ACCESS_KEY &&
 	env.MINIMO_ACCESS_SECRET &&
 	env.MINIMO_STORAGE_BUCKET
 );
 
-// Parse the endpoint to get the URL parts
+/**
+ * Parse the endpoint URL for S3 client configuration
+ * Handles URLs with ports correctly (url.host includes port)
+ */
 function parseEndpoint(endpoint: string) {
 	try {
 		const url = new URL(endpoint);
+		// url.host includes both hostname and port (e.g., "example.com:9000")
 		return {
 			endpoint: `${url.protocol}//${url.host}`,
-			forcePathStyle: true,
+			forcePathStyle: true, // Required for Minio (uses path-style: /bucket/key instead of bucket.s3.amazonaws.com/key)
 		};
 	} catch {
 		// If it's not a full URL, assume it's just a host
@@ -61,15 +122,20 @@ async function getS3Client() {
 			return null;
 		}
 		
-		const { endpoint } = parseEndpoint(env.MINIMO_URL!);
+		const apiEndpoint = getApiEndpoint();
+		if (!apiEndpoint) {
+			throw new Error("Minio API endpoint is not configured. Please set MINIMO_API_URL or MINIMO_URL.");
+		}
+		
+		const { endpoint } = parseEndpoint(apiEndpoint);
 		s3ClientInstance = new S3Client({
-			endpoint,
+			endpoint, // Minio API endpoint (e.g., https://api.example.com:9000)
 			region: "us-east-1", // Minio doesn't care about region, but SDK requires it
 			credentials: {
 				accessKeyId: env.MINIMO_ACCESS_KEY!,
 				secretAccessKey: env.MINIMO_ACCESS_SECRET!,
 			},
-			forcePathStyle: true, // Required for Minio
+			forcePathStyle: true, // Required for Minio - uses path-style URLs
 		});
 	}
 	
@@ -101,8 +167,12 @@ export async function uploadFile(
 
 	await client.send(command);
 
-	// Return the public URL
-	const { endpoint } = parseEndpoint(env.MINIMO_URL!);
+	// Return the public URL (use console URL if available, otherwise API URL)
+	const publicUrl = getPublicUrl();
+	if (!publicUrl) {
+		throw new Error("Minio URL is not configured for public file access.");
+	}
+	const { endpoint } = parseEndpoint(publicUrl);
 	return `${endpoint}/${bucketName}/${filename}`;
 }
 
@@ -111,7 +181,7 @@ export async function uploadFile(
  */
 export async function listFiles(): Promise<Array<{ filename: string; url: string; size?: number }>> {
 	if (!isMinioConfigured) {
-		throw new Error("Minio storage is not configured. Please set MINIMO_URL, MINIMO_ACCESS_KEY, MINIMO_ACCESS_SECRET, and MINIMO_STORAGE_BUCKET environment variables.");
+		throw new Error("Minio storage is not configured. Please set MINIMO_API_URL (or MINIMO_URL), MINIMO_ACCESS_KEY, MINIMO_ACCESS_SECRET, and MINIMO_STORAGE_BUCKET environment variables.");
 	}
 
 	const client = await getS3Client();
@@ -125,7 +195,11 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 		});
 
 		const response = await client.send(command);
-		const { endpoint } = parseEndpoint(env.MINIMO_URL!);
+		const publicUrl = getPublicUrl();
+		if (!publicUrl) {
+			throw new Error("Minio URL is not configured for public file access.");
+		}
+		const { endpoint } = parseEndpoint(publicUrl);
 
 		return (response.Contents ?? []).map((item) => ({
 			filename: item.Key ?? "",
@@ -142,7 +216,8 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 			throw new Error(`Invalid Minio credentials. Please check your MINIMO_ACCESS_KEY and MINIMO_ACCESS_SECRET.`);
 		}
 		if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
-			throw new Error(`Cannot connect to Minio endpoint. Please check your MINIMO_URL setting: ${env.MINIMO_URL}`);
+			const apiEndpoint = getApiEndpoint();
+			throw new Error(`Cannot connect to Minio API endpoint. Please check your MINIMO_API_URL or MINIMO_URL setting. Current API endpoint: ${apiEndpoint ?? 'not configured'}`);
 		}
 		throw new Error(`Failed to list files from Minio: ${errorMessage}`);
 	}
