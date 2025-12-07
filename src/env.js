@@ -23,11 +23,11 @@ export const env = createEnv({
 		UMAMI_API_TOKEN: z.string().optional(),
 		UMAMI_WEBSITE_ID: z.string().optional(),
 		ADMIN_EMAILS: z.string().optional(), // comma-separated list of admin emails
-		// Minio/S3 storage
-		MINIO_ENDPOINT: z.string().optional(),
-		MINIO_ACCESS_KEY: z.string().optional(),
-		MINIO_SECRET_KEY: z.string().optional(),
-		MINIO_BUCKET: z.string().optional(),
+		// Minio/S3 storage (using MINIMO_ prefix as per .env file)
+		MINIMO_URL: z.string().optional(),
+		MINIMO_ACCESS_KEY: z.string().optional(),
+		MINIMO_ACCESS_SECRET: z.string().optional(),
+		MINIMO_STORAGE_BUCKET: z.string().optional(),
 	},
 
 	/**
@@ -53,10 +53,10 @@ export const env = createEnv({
 		UMAMI_API_TOKEN: process.env.UMAMI_API_TOKEN,
 		UMAMI_WEBSITE_ID: process.env.UMAMI_WEBSITE_ID,
 		ADMIN_EMAILS: process.env.ADMIN_EMAILS,
-		MINIO_ENDPOINT: process.env.MINIO_ENDPOINT,
-		MINIO_ACCESS_KEY: process.env.MINIO_ACCESS_KEY,
-		MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY,
-		MINIO_BUCKET: process.env.MINIO_BUCKET,
+		MINIMO_URL: process.env.MINIMO_URL,
+		MINIMO_ACCESS_KEY: process.env.MINIMO_ACCESS_KEY,
+		MINIMO_ACCESS_SECRET: process.env.MINIMO_ACCESS_SECRET,
+		MINIMO_STORAGE_BUCKET: process.env.MINIMO_STORAGE_BUCKET,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

@@ -24,10 +24,10 @@ async function loadS3SDK() {
 
 // Check if Minio is configured
 export const isMinioConfigured = Boolean(
-	env.MINIO_ENDPOINT &&
-	env.MINIO_ACCESS_KEY &&
-	env.MINIO_SECRET_KEY &&
-	env.MINIO_BUCKET
+	env.MINIMO_URL &&
+	env.MINIMO_ACCESS_KEY &&
+	env.MINIMO_ACCESS_SECRET &&
+	env.MINIMO_STORAGE_BUCKET
 );
 
 // Parse the endpoint to get the URL parts
@@ -61,13 +61,13 @@ async function getS3Client() {
 			return null;
 		}
 		
-		const { endpoint } = parseEndpoint(env.MINIO_ENDPOINT!);
+		const { endpoint } = parseEndpoint(env.MINIMO_URL!);
 		s3ClientInstance = new S3Client({
 			endpoint,
 			region: "us-east-1", // Minio doesn't care about region, but SDK requires it
 			credentials: {
-				accessKeyId: env.MINIO_ACCESS_KEY!,
-				secretAccessKey: env.MINIO_SECRET_KEY!,
+				accessKeyId: env.MINIMO_ACCESS_KEY!,
+				secretAccessKey: env.MINIMO_ACCESS_SECRET!,
 			},
 			forcePathStyle: true, // Required for Minio
 		});
@@ -76,7 +76,7 @@ async function getS3Client() {
 	return s3ClientInstance;
 }
 
-export const bucketName = env.MINIO_BUCKET ?? "uploads";
+export const bucketName = env.MINIMO_STORAGE_BUCKET ?? "uploads";
 
 /**
  * Upload a file to Minio/S3
@@ -102,7 +102,7 @@ export async function uploadFile(
 	await client.send(command);
 
 	// Return the public URL
-	const { endpoint } = parseEndpoint(env.MINIO_ENDPOINT!);
+	const { endpoint } = parseEndpoint(env.MINIMO_URL!);
 	return `${endpoint}/${bucketName}/${filename}`;
 }
 
@@ -111,7 +111,7 @@ export async function uploadFile(
  */
 export async function listFiles(): Promise<Array<{ filename: string; url: string; size?: number }>> {
 	if (!isMinioConfigured) {
-		throw new Error("Minio storage is not configured. Please set MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, and MINIO_BUCKET environment variables.");
+		throw new Error("Minio storage is not configured. Please set MINIMO_URL, MINIMO_ACCESS_KEY, MINIMO_ACCESS_SECRET, and MINIMO_STORAGE_BUCKET environment variables.");
 	}
 
 	const client = await getS3Client();
@@ -125,7 +125,7 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 		});
 
 		const response = await client.send(command);
-		const { endpoint } = parseEndpoint(env.MINIO_ENDPOINT!);
+		const { endpoint } = parseEndpoint(env.MINIMO_URL!);
 
 		return (response.Contents ?? []).map((item) => ({
 			filename: item.Key ?? "",
@@ -136,13 +136,13 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 		// Provide more helpful error messages
 		if (errorMessage.includes('NoSuchBucket') || errorMessage.includes('does not exist')) {
-			throw new Error(`Bucket "${bucketName}" does not exist. Please create it first or check your MINIO_BUCKET setting.`);
+			throw new Error(`Bucket "${bucketName}" does not exist. Please create it first or check your MINIMO_STORAGE_BUCKET setting.`);
 		}
 		if (errorMessage.includes('InvalidAccessKeyId') || errorMessage.includes('SignatureDoesNotMatch')) {
-			throw new Error(`Invalid Minio credentials. Please check your MINIO_ACCESS_KEY and MINIO_SECRET_KEY.`);
+			throw new Error(`Invalid Minio credentials. Please check your MINIMO_ACCESS_KEY and MINIMO_ACCESS_SECRET.`);
 		}
 		if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
-			throw new Error(`Cannot connect to Minio endpoint. Please check your MINIO_ENDPOINT setting: ${env.MINIO_ENDPOINT}`);
+			throw new Error(`Cannot connect to Minio endpoint. Please check your MINIMO_URL setting: ${env.MINIMO_URL}`);
 		}
 		throw new Error(`Failed to list files from Minio: ${errorMessage}`);
 	}
