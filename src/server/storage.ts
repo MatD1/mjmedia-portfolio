@@ -58,6 +58,13 @@ function getApiEndpoint(): string | null {
 		try {
 			const url = new URL(env.MINIMO_URL);
 			
+			// Check for common Railway patterns and invalid URLs
+			if (url.hostname.includes('railway.internal')) {
+				console.warn('[MinIO] Warning: Using internal Railway URL. This will not work from external connections.');
+				console.warn('[MinIO] Please use the public Railway URL from your service settings.');
+				return null;
+			}
+			
 			// For Railway deployments:
 			// - If MINIMO_PORT is set, use it (e.g., 9090 for proxy)
 			// - If URL has a port, keep it or replace based on context
@@ -77,7 +84,7 @@ function getApiEndpoint(): string | null {
 					: `${url.protocol}//${apiHostname}`;
 			}
 			
-			// Pattern 3: For Railway, if URL has no port, don't add one (Railway handles routing)
+			// Pattern 3: For Railway, if URL has no port, use same URL with port 9000
 			// If it has a port, try replacing with 9000 (standard Minio API port)
 			if (url.port) {
 				// If port is 9001 (console), replace with 9000 (API)
@@ -88,10 +95,23 @@ function getApiEndpoint(): string | null {
 				return env.MINIMO_URL;
 			}
 			
-			// Pattern 4: No port specified - Railway handles routing, use same URL
+			// Pattern 4: For Railway deployments, try different port strategies
+			if (url.hostname.includes('railway.app')) {
+				// Railway often uses the same URL for both console and API
+				// Try without port first (Railway internal routing)
+				if (!env.MINIMO_PORT) {
+					console.log('[MinIO] Railway detected: trying same URL for API (Railway internal routing)');
+					return env.MINIMO_URL;
+				}
+				// If port is specified, use it
+				return `${url.protocol}//${url.hostname}:${env.MINIMO_PORT}`;
+			}
+			
+			// Pattern 5: No port specified - Railway handles routing, use same URL
 			// This is common for Railway deployments where the public URL routes internally
 			return env.MINIMO_URL;
-		} catch {
+		} catch (err) {
+			console.error('[MinIO] Failed to parse MINIMO_URL:', err);
 			// If URL parsing fails, return the original
 			return env.MINIMO_URL;
 		}
@@ -101,13 +121,19 @@ function getApiEndpoint(): string | null {
 }
 
 /**
- * Get the public URL for file access (uses console URL or API URL)
+ * Get the public URL for file access (should use API endpoint for direct file access)
  */
 function getPublicUrl(): string | null {
+	// For file access, use the API endpoint (bucket URL), not the console URL
+	const apiEndpoint = getApiEndpoint();
+	if (apiEndpoint) {
+		return apiEndpoint;
+	}
+	// Fallback to console URL if no API endpoint
 	if (env.MINIMO_URL) {
 		return env.MINIMO_URL;
 	}
-	return getApiEndpoint();
+	return null;
 }
 
 // Check if Minio is configured
@@ -142,7 +168,7 @@ function parseEndpoint(endpoint: string) {
 // Lazy S3 client creation
 let s3ClientInstance: InstanceType<typeof import("@aws-sdk/client-s3").S3Client> | null = null;
 
-async function getS3Client() {
+export async function getS3Client() {
 	if (!isMinioConfigured) {
 		return null;
 	}
@@ -155,19 +181,26 @@ async function getS3Client() {
 		
 		const apiEndpoint = getApiEndpoint();
 		if (!apiEndpoint) {
-			throw new Error("Minio API endpoint is not configured. Please set MINIMO_API_URL or MINIMO_URL.");
+			console.error('[MinIO] API endpoint could not be determined from configuration');
+			console.error('[MinIO] Please check your MINIMO_URL or set MINIMO_API_URL directly');
+			throw new Error("MinIO API endpoint is not configured. Please set MINIMO_API_URL or provide a valid MINIMO_URL.");
 		}
 		
 		const { endpoint } = parseEndpoint(apiEndpoint);
 		
 		// Log the endpoint being used (helpful for debugging)
-		console.log(`[Minio] Connecting to API endpoint: ${endpoint}`);
-		console.log(`[Minio] Bucket: ${bucketName}`);
+		console.log(`[MinIO] Connecting to API endpoint: ${endpoint}`);
+		console.log(`[MinIO] Bucket: ${bucketName}`);
 		if (env.MINIMO_PORT) {
-			console.log(`[Minio] Using port override: ${env.MINIMO_PORT}`);
+			console.log(`[MinIO] Using port override: ${env.MINIMO_PORT}`);
 		}
-		if (endpoint.includes('railway')) {
-			console.log(`[Minio] Railway detected - if timeout occurs, try using internal service name (e.g., minio.railway.internal:9000)`);
+		if (endpoint.includes('railway.internal')) {
+			console.error(`[MinIO] ERROR: Using internal Railway URL: ${endpoint}`);
+			console.error(`[MinIO] This will not work! Please use the public Railway URL.`);
+			throw new Error("Cannot use internal Railway URL. Please update MINIMO_URL to use the public Railway URL.");
+		}
+		if (endpoint.includes('railway.app')) {
+			console.log(`[MinIO] Railway deployment detected`);
 		}
 		
 		s3ClientInstance = new S3Client({
@@ -211,13 +244,8 @@ export async function uploadFile(
 
 	await client.send(command);
 
-	// Return the public URL (use console URL if available, otherwise API URL)
-	const publicUrl = getPublicUrl();
-	if (!publicUrl) {
-		throw new Error("Minio URL is not configured for public file access.");
-	}
-	const { endpoint } = parseEndpoint(publicUrl);
-	return `${endpoint}/${bucketName}/${filename}`;
+	// Return the alternative proxy URL that handles special characters better
+	return `/api/media-alt/${encodeURIComponent(filename)}`;
 }
 
 /**
@@ -245,11 +273,18 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 		}
 		const { endpoint } = parseEndpoint(publicUrl);
 
-		return (response.Contents ?? []).map((item) => ({
-			filename: item.Key ?? "",
-			url: `${endpoint}/${bucketName}/${item.Key}`,
-			size: item.Size,
-		}));
+		return (response.Contents ?? []).map((item) => {
+			const filename = item.Key ?? "";
+			// Use the alternative proxy endpoint that handles special characters better
+			const encodedFilename = encodeURIComponent(filename);
+			const url = `/api/media-alt/${encodedFilename}`;
+			console.log(`[MinIO] Generated proxied URL for "${filename}": ${url}`); // Debug logging
+			return {
+				filename,
+				url,
+				size: item.Size,
+			};
+		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 		

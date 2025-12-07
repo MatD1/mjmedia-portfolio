@@ -45,14 +45,14 @@ export const runtime = 'nodejs';
 // Allowed file extensions for security
 const ALLOWED_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg',
-  'heic', 'heif', // iPhone formats - will be converted
+  // Note: HEIC/HEIF removed - not supported in web browsers or standard sharp builds
   'mp4', 'webm', 'ogg',
   'pdf', 'doc', 'docx',
 ]);
 
 // Extensions that need conversion to web-friendly formats
-const CONVERT_TO_PNG = new Set(['heic', 'heif']);
-const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif']);
+const CONVERT_TO_PNG = new Set([]); // Empty - no conversion needed
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif']); // Removed HEIC/HEIF
 
 // Max file size: 25MB (larger to accommodate raw iPhone photos)
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -89,8 +89,8 @@ async function processImage(
     return null;
   }
 
-  const needsConversion = CONVERT_TO_PNG.has(ext);
-  const targetFormat = outputFormat ?? (needsConversion ? 'png' : ext);
+  const needsConversion = false; // No longer doing HEIC conversion
+  const targetFormat = outputFormat ?? ext;
   
   try {
     let pipeline = sharp(buffer, {
@@ -104,10 +104,7 @@ async function processImage(
     // Check if we got valid metadata (if not, sharp might not support this format)
     if (!metadata || !metadata.format) {
       console.warn(`[Image Processing] Could not read metadata for ${ext} file`);
-      if (needsConversion) {
-        throw new Error(`HEIC/HEIF format not supported by sharp. Install libheif or use a different image.`);
-      }
-      return null; // Skip processing for unsupported formats that don't need conversion
+      return null; // Skip processing for unsupported formats
     }
     
     // Resize if too large (maintain aspect ratio)
@@ -253,6 +250,12 @@ export async function POST(request: Request) {
     const safeExt = (ext || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     
     if (!safeExt || !ALLOWED_EXTENSIONS.has(safeExt)) {
+      // Special message for HEIC files
+      if (['heic', 'heif'].includes(safeExt)) {
+        return NextResponse.json({ 
+          error: 'HEIC/HEIF files are not supported. Please convert your image to JPG or PNG before uploading. On iPhone: Go to Settings > Camera > Formats and select "Most Compatible" to capture in JPG format.' 
+        }, { status: 400 });
+      }
       return NextResponse.json({ error: 'File type not allowed' }, { status: 400 });
     }
 
@@ -271,27 +274,12 @@ export async function POST(request: Request) {
           finalExt = processed.ext;
           contentType = processed.contentType;
           wasConverted = safeExt !== finalExt;
-        } else if (CONVERT_TO_PNG.has(safeExt)) {
-          return NextResponse.json({ 
-            error: 'HEIC/HEIF conversion is not available. Sharp may not have HEIF support compiled. Please convert the image to PNG or JPEG first, or install libheif on the server.' 
-          }, { status: 400 });
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error('Image processing error:', errorMessage, error);
         
-        if (CONVERT_TO_PNG.has(safeExt)) {
-          // Check if it's a format support issue
-          if (errorMessage.includes('format not supported') || errorMessage.includes('unsupported') || errorMessage.includes('HEIF')) {
-            return NextResponse.json({ 
-              error: 'HEIC/HEIF format is not supported by the image processor. Please convert the image to PNG or JPEG before uploading. The server may need libheif installed for HEIC support.' 
-            }, { status: 400 });
-          }
-          return NextResponse.json({ 
-            error: `Failed to convert HEIC/HEIF image: ${errorMessage}. Please convert to PNG/JPEG first.` 
-          }, { status: 400 });
-        }
-        // For non-HEIC images, log but continue with original
+        // For any processing errors, log but continue with original file
         console.warn('Image processing failed, using original file:', errorMessage);
       }
     }

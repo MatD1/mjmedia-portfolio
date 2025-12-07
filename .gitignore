@@ -44,3 +44,9 @@ yarn-error.log*
 
 # idea files
 .idea
+CLEANED_BLOG_CONTENT.md
+FIND_MINIO_API.md
+.gitignore
+MINIO_FIX_README.md
+.gitignore
+MINIO_TIMEOUT_DEBUG.md

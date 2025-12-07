@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { IoImage, IoCopy, IoRefresh, IoClose } from 'react-icons/io5';
-import { toast } from 'sonner';
-import Card from '~/components/ui/Card';
-import Button from '~/components/ui/Button';
-import Loading from '~/components/ui/Loading';
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { IoImage, IoCopy, IoRefresh, IoClose } from "react-icons/io5";
+import { toast } from "sonner";
+import Card from "~/components/ui/Card";
+import Button from "~/components/ui/Button";
+import Loading from "~/components/ui/Loading";
 
 interface MediaItem {
   filename: string;
@@ -20,27 +20,31 @@ interface MediaPreviewProps {
   className?: string;
 }
 
-export default function MediaPreview({ onInsertImage, onInsertLink, className }: MediaPreviewProps) {
+export default function MediaPreview({
+  onInsertImage,
+  onInsertLink,
+  className,
+}: MediaPreviewProps) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
-  const [imageAlt, setImageAlt] = useState('');
+  const [imageAlt, setImageAlt] = useState("");
 
   const fetchMedia = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/media/upload');
+      const res = await fetch("/api/media/upload");
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? 'Failed to load media');
+        setError(data.error ?? "Failed to load media");
         setItems([]);
       } else {
         setItems(data.items ?? []);
       }
     } catch (err) {
-      setError('Failed to connect to server');
+      setError("Failed to connect to server");
       setItems([]);
     }
     setIsLoading(false);
@@ -52,15 +56,15 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
 
   const copyUrl = (url: string) => {
     navigator.clipboard.writeText(url);
-    toast.success('URL copied to clipboard');
+    toast.success("URL copied to clipboard");
   };
 
   const insertAsImage = (item: MediaItem) => {
     if (onInsertImage) {
       onInsertImage(item.url, imageAlt || item.filename);
       setSelectedItem(null);
-      setImageAlt('');
-      toast.success('Image inserted into content');
+      setImageAlt("");
+      toast.success("Image inserted into content");
     }
   };
 
@@ -68,31 +72,43 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
     if (onInsertLink) {
       onInsertLink(item.url, item.filename);
       setSelectedItem(null);
-      toast.success('Link inserted into content');
+      toast.success("Link inserted into content");
     }
   };
 
   const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '';
+    if (!bytes) return "";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const isWebCompatibleImage = (filename: string) => {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    // Only web-compatible image formats
+    return ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"].includes(
+      ext ?? ""
+    );
+  };
+
+  const isHEICFile = (filename: string) => {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    return ["heic", "heif"].includes(ext ?? "");
+  };
+
   const isImage = (filename: string) => {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg'].includes(ext ?? '');
+    return isWebCompatibleImage(filename) || isHEICFile(filename);
   };
 
   if (selectedItem) {
     return (
-      <Card className={`p-4 ${className ?? ''}`}>
+      <Card className={`p-4 ${className ?? ""}`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="pixel-text text-lg text-glow">Insert Media</h3>
           <button
             onClick={() => {
               setSelectedItem(null);
-              setImageAlt('');
+              setImageAlt("");
             }}
             className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           >
@@ -102,12 +118,37 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
 
         <div className="space-y-4">
           <div className="aspect-video bg-[var(--bg-tertiary)] rounded border border-[var(--border-primary)] overflow-hidden">
-            {isImage(selectedItem.filename) ? (
+            {isWebCompatibleImage(selectedItem.filename) ? (
               <img
                 src={selectedItem.url}
                 alt={selectedItem.filename}
                 className="w-full h-full object-contain"
+                onError={(e) => {
+                  console.error(
+                    "Failed to load selected image:",
+                    selectedItem.url
+                  );
+                  console.error("Error details:", e);
+                }}
+                onLoad={() => {
+                  console.log(
+                    "Successfully loaded selected image:",
+                    selectedItem.url
+                  );
+                }}
               />
+            ) : isHEICFile(selectedItem.filename) ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center">
+                  <IoImage className="text-4xl text-[var(--neon-cyan)] opacity-50 mx-auto mb-2" />
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    HEIC Preview Unavailable
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Upload a new version to convert to PNG
+                  </p>
+                </div>
+              </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <IoImage className="text-4xl text-[var(--neon-cyan)] opacity-50" />
@@ -116,14 +157,20 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
           </div>
 
           <div>
-            <p className="text-sm text-[var(--text-secondary)] mb-1">Filename:</p>
-            <p className="text-sm text-[var(--text-primary)] font-mono break-all">{selectedItem.filename}</p>
+            <p className="text-sm text-[var(--text-secondary)] mb-1">
+              Filename:
+            </p>
+            <p className="text-sm text-[var(--text-primary)] font-mono break-all">
+              {selectedItem.filename}
+            </p>
           </div>
 
           {selectedItem.size && (
             <div>
               <p className="text-sm text-[var(--text-secondary)] mb-1">Size:</p>
-              <p className="text-sm text-[var(--text-primary)]">{formatFileSize(selectedItem.size)}</p>
+              <p className="text-sm text-[var(--text-primary)]">
+                {formatFileSize(selectedItem.size)}
+              </p>
             </div>
           )}
 
@@ -146,7 +193,7 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
             </div>
           </div>
 
-          {isImage(selectedItem.filename) && onInsertImage && (
+          {isWebCompatibleImage(selectedItem.filename) && onInsertImage && (
             <>
               <div>
                 <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
@@ -186,7 +233,7 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
   }
 
   return (
-    <Card className={`p-4 ${className ?? ''}`}>
+    <Card className={`p-4 ${className ?? ""}`}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="pixel-text text-lg text-glow">Media Library</h3>
         <Button
@@ -195,7 +242,7 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
           onClick={fetchMedia}
           disabled={isLoading}
         >
-          <IoRefresh size={16} className={isLoading ? 'animate-spin' : ''} />
+          <IoRefresh size={16} className={isLoading ? "animate-spin" : ""} />
         </Button>
       </div>
 
@@ -223,12 +270,28 @@ export default function MediaPreview({ onInsertImage, onInsertLink, className }:
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                {isImage(item.filename) ? (
+                {isWebCompatibleImage(item.filename) ? (
                   <img
                     src={item.url}
                     alt={item.filename}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      console.error("Failed to load image:", item.url);
+                      console.error("Error details:", e);
+                    }}
+                    onLoad={() => {
+                      console.log("Successfully loaded image:", item.url);
+                    }}
                   />
+                ) : isHEICFile(item.filename) ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <IoImage className="text-xl text-[var(--neon-cyan)] opacity-50 mx-auto mb-1" />
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        HEIC
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <IoImage className="text-2xl text-[var(--neon-cyan)] opacity-50" />
