@@ -5,8 +5,9 @@ WORKDIR /app
 
 # Install OS deps needed by Prisma, Next.js, and Sharp (image processing)
 # vips-dev includes headers needed for sharp to build from source
+# libheif-dev provides HEIC/HEIF support for sharp
 # python3, make, g++ are build tools needed by node-gyp
-RUN apk add --no-cache libc6-compat openssl vips-dev python3 make g++
+RUN apk add --no-cache libc6-compat openssl vips-dev libheif-dev python3 make g++
 
 # ---------------------------------------------------------------------------
 FROM base AS deps
@@ -41,8 +42,8 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 EXPOSE 3000
 
-# Install runtime deps for Sharp image processing
-RUN apk add --no-cache libc6-compat vips
+# Install runtime deps for Sharp image processing (including HEIC/HEIF support)
+RUN apk add --no-cache libc6-compat vips libheif
 
 # Don't run as root
 RUN addgroup --system --gid 1001 nodejs

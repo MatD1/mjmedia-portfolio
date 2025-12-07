@@ -75,53 +75,68 @@ async function processImage(
   const needsConversion = CONVERT_TO_PNG.has(ext);
   const targetFormat = outputFormat ?? (needsConversion ? 'png' : ext);
   
-  let pipeline = sharp(buffer, {
-    // Enable HEIF/HEIC support
-    failOn: 'none',
-  });
-
-  // Get image metadata
-  const metadata = await pipeline.metadata();
-  
-  // Resize if too large (maintain aspect ratio)
-  if (metadata.width && metadata.width > MAX_IMAGE_DIMENSION) {
-    pipeline = pipeline.resize(MAX_IMAGE_DIMENSION, undefined, {
-      withoutEnlargement: true,
-      fit: 'inside',
+  try {
+    let pipeline = sharp(buffer, {
+      // Enable HEIF/HEIC support
+      failOn: 'none',
     });
-  } else if (metadata.height && metadata.height > MAX_IMAGE_DIMENSION) {
-    pipeline = pipeline.resize(undefined, MAX_IMAGE_DIMENSION, {
-      withoutEnlargement: true,
-      fit: 'inside',
-    });
+
+    // Get image metadata
+    const metadata = await pipeline.metadata();
+    
+    // Check if we got valid metadata (if not, sharp might not support this format)
+    if (!metadata || !metadata.format) {
+      console.warn(`[Image Processing] Could not read metadata for ${ext} file`);
+      if (needsConversion) {
+        throw new Error(`HEIC/HEIF format not supported by sharp. Install libheif or use a different image.`);
+      }
+      return null; // Skip processing for unsupported formats that don't need conversion
+    }
+    
+    // Resize if too large (maintain aspect ratio)
+    if (metadata.width && metadata.width > MAX_IMAGE_DIMENSION) {
+      pipeline = pipeline.resize(MAX_IMAGE_DIMENSION, undefined, {
+        withoutEnlargement: true,
+        fit: 'inside',
+      });
+    } else if (metadata.height && metadata.height > MAX_IMAGE_DIMENSION) {
+      pipeline = pipeline.resize(undefined, MAX_IMAGE_DIMENSION, {
+        withoutEnlargement: true,
+        fit: 'inside',
+      });
+    }
+
+    // Convert to target format with optimization
+    let outputBuffer: Buffer;
+    let outputExt: string;
+    let contentType: string;
+
+    switch (targetFormat) {
+      case 'jpeg':
+      case 'jpg':
+        outputBuffer = await pipeline.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer();
+        outputExt = 'jpg';
+        contentType = 'image/jpeg';
+        break;
+      case 'webp':
+        outputBuffer = await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer();
+        outputExt = 'webp';
+        contentType = 'image/webp';
+        break;
+      case 'png':
+      default:
+        outputBuffer = await pipeline.png({ compressionLevel: PNG_COMPRESSION }).toBuffer();
+        outputExt = 'png';
+        contentType = 'image/png';
+        break;
+    }
+
+    return { buffer: outputBuffer, ext: outputExt, contentType };
+  } catch (error) {
+    // Log the actual error for debugging
+    console.error(`[Image Processing] Error processing ${ext} file:`, error);
+    throw error; // Re-throw so caller can handle it
   }
-
-  // Convert to target format with optimization
-  let outputBuffer: Buffer;
-  let outputExt: string;
-  let contentType: string;
-
-  switch (targetFormat) {
-    case 'jpeg':
-    case 'jpg':
-      outputBuffer = await pipeline.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer();
-      outputExt = 'jpg';
-      contentType = 'image/jpeg';
-      break;
-    case 'webp':
-      outputBuffer = await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer();
-      outputExt = 'webp';
-      contentType = 'image/webp';
-      break;
-    case 'png':
-    default:
-      outputBuffer = await pipeline.png({ compressionLevel: PNG_COMPRESSION }).toBuffer();
-      outputExt = 'png';
-      contentType = 'image/png';
-      break;
-  }
-
-  return { buffer: outputBuffer, ext: outputExt, contentType };
 }
 
 export async function GET() {
@@ -210,13 +225,27 @@ export async function POST(request: Request) {
           contentType = processed.contentType;
           wasConverted = safeExt !== finalExt;
         } else if (CONVERT_TO_PNG.has(safeExt)) {
-          return NextResponse.json({ error: 'HEIC/HEIF conversion not available. Please convert to PNG/JPEG first.' }, { status: 400 });
+          return NextResponse.json({ 
+            error: 'HEIC/HEIF conversion is not available. Sharp may not have HEIF support compiled. Please convert the image to PNG or JPEG first, or install libheif on the server.' 
+          }, { status: 400 });
         }
       } catch (error) {
-        console.error('Image processing error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Image processing error:', errorMessage, error);
+        
         if (CONVERT_TO_PNG.has(safeExt)) {
-          return NextResponse.json({ error: 'Failed to convert HEIC/HEIF image. Please convert to PNG/JPEG first.' }, { status: 400 });
+          // Check if it's a format support issue
+          if (errorMessage.includes('format not supported') || errorMessage.includes('unsupported') || errorMessage.includes('HEIF')) {
+            return NextResponse.json({ 
+              error: 'HEIC/HEIF format is not supported by the image processor. Please convert the image to PNG or JPEG before uploading. The server may need libheif installed for HEIC support.' 
+            }, { status: 400 });
+          }
+          return NextResponse.json({ 
+            error: `Failed to convert HEIC/HEIF image: ${errorMessage}. Please convert to PNG/JPEG first.` 
+          }, { status: 400 });
         }
+        // For non-HEIC images, log but continue with original
+        console.warn('Image processing failed, using original file:', errorMessage);
       }
     }
 
