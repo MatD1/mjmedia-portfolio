@@ -62,8 +62,45 @@ export async function GET(
     });
 
     console.log(`[Media Proxy Alt] Requesting from bucket "${bucketName}" with key "${filename}"`);
+    console.log(`[Media Proxy Alt] Environment: ${process.env.NODE_ENV}`);
+    console.log(`[Media Proxy Alt] Timestamp: ${new Date().toISOString()}`);
 
-    const response = await client.send(command);
+    // Add timeout wrapper for Railway (60s limit, but we'll timeout at 25s to fail fast)
+    const TIMEOUT_MS = 25000; // 25 seconds
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Request timeout after ${TIMEOUT_MS}ms - Railway may have networking issues`));
+      }, TIMEOUT_MS);
+    });
+
+    let response;
+    try {
+      response = await Promise.race([
+        client.send(command),
+        timeoutPromise,
+      ]);
+    } catch (timeoutError) {
+      console.error(`[Media Proxy Alt] Timeout or error fetching from Minio:`, timeoutError);
+      const errorMessage = timeoutError instanceof Error ? timeoutError.message : 'Unknown error';
+      
+      // Check if it's a timeout
+      if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+        return new NextResponse(
+          JSON.stringify({ 
+            error: 'Request timeout', 
+            message: 'The Minio service did not respond in time. This may indicate a networking issue in production.',
+            details: errorMessage 
+          }),
+          { 
+            status: 504, // Gateway Timeout
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
+      }
+      
+      // Re-throw other errors to be caught by outer catch
+      throw timeoutError;
+    }
 
     if (!response.Body) {
       console.log(`[Media Proxy Alt] File not found: "${filename}"`);
@@ -157,7 +194,53 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error('[Media Proxy Alt] Error serving image:', error);
-    return new NextResponse(`Internal server error: ${error instanceof Error ? error.message : 'Unknown error'}`, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error('[Media Proxy Alt] Error serving image:', errorMessage);
+    console.error('[Media Proxy Alt] Error stack:', errorStack);
+    console.error('[Media Proxy Alt] Environment:', process.env.NODE_ENV);
+    console.error('[Media Proxy Alt] Timestamp:', new Date().toISOString());
+    
+    // Check for specific error types
+    if (errorMessage.includes('timeout') || errorMessage.includes('Timeout') || errorMessage.includes('ETIMEDOUT')) {
+      return new NextResponse(
+        JSON.stringify({ 
+          error: 'Gateway Timeout',
+          message: 'The Minio service did not respond in time. This may indicate a networking issue.',
+          details: errorMessage 
+        }),
+        { 
+          status: 504,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+    
+    if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
+      return new NextResponse(
+        JSON.stringify({ 
+          error: 'Connection Failed',
+          message: 'Cannot connect to Minio service. Please check your MINIMO_API_URL configuration.',
+          details: errorMessage 
+        }),
+        { 
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+    
+    return new NextResponse(
+      JSON.stringify({ 
+        error: 'Internal Server Error',
+        message: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? errorStack : undefined
+      }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
   }
 }

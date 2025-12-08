@@ -66,26 +66,41 @@ function getApiEndpoint(): string | null {
 			}
 			
 			// For Railway deployments:
-			// - If MINIMO_PORT is set, use it (e.g., 9090 for proxy)
-			// - If URL has a port, keep it or replace based on context
-			// - If no port, Railway handles routing - use same URL
+			// - Railway public URLs (railway.app) already route to the correct port internally
+			// - DO NOT add ports to Railway public URLs - they handle routing automatically
+			// - MINIMO_PORT is only for non-Railway deployments or internal service names
 			
-			// Pattern 1: If MINIMO_PORT is explicitly set, use it
+			// Check if this is a Railway public URL
+			const isRailwayPublicUrl = url.hostname.includes('railway.app');
+			
+			if (isRailwayPublicUrl) {
+				// Railway public URLs already route to the correct port - don't add one!
+				console.log('[MinIO] Railway public URL detected: using URL without port (Railway handles routing)');
+				// Remove any existing port from the URL if present
+				return `${url.protocol}//${url.hostname}`;
+			}
+			
+			// For non-Railway URLs, handle port configuration
+			// Pattern 1: If MINIMO_PORT is explicitly set, use it (for non-Railway deployments)
 			if (env.MINIMO_PORT) {
-				return `${url.protocol}//${url.hostname}:${env.MINIMO_PORT}`;
+				// Only add port if URL doesn't already have one
+				if (!url.port) {
+					return `${url.protocol}//${url.hostname}:${env.MINIMO_PORT}`;
+				}
+				// If URL already has a port, keep it
+				return env.MINIMO_URL;
 			}
 			
 			// Pattern 2: Replace 'console' with 'api' in subdomain (keep existing port if any)
 			if (url.hostname.includes('console')) {
 				const apiHostname = url.hostname.replace('console', 'api');
-				// Keep port if it exists, otherwise don't add one (Railway routing)
+				// Keep port if it exists, otherwise don't add one
 				return url.port 
 					? `${url.protocol}//${apiHostname}:${url.port}`
 					: `${url.protocol}//${apiHostname}`;
 			}
 			
-			// Pattern 3: For Railway, if URL has no port, use same URL with port 9000
-			// If it has a port, try replacing with 9000 (standard Minio API port)
+			// Pattern 3: If URL has a port, check if it needs to be changed
 			if (url.port) {
 				// If port is 9001 (console), replace with 9000 (API)
 				if (url.port === '9001') {
@@ -95,20 +110,7 @@ function getApiEndpoint(): string | null {
 				return env.MINIMO_URL;
 			}
 			
-			// Pattern 4: For Railway deployments, try different port strategies
-			if (url.hostname.includes('railway.app')) {
-				// Railway often uses the same URL for both console and API
-				// Try without port first (Railway internal routing)
-				if (!env.MINIMO_PORT) {
-					console.log('[MinIO] Railway detected: trying same URL for API (Railway internal routing)');
-					return env.MINIMO_URL;
-				}
-				// If port is specified, use it
-				return `${url.protocol}//${url.hostname}:${env.MINIMO_PORT}`;
-			}
-			
-			// Pattern 5: No port specified - Railway handles routing, use same URL
-			// This is common for Railway deployments where the public URL routes internally
+			// Pattern 4: No port specified - use same URL (let the service handle routing)
 			return env.MINIMO_URL;
 		} catch (err) {
 			console.error('[MinIO] Failed to parse MINIMO_URL:', err);
@@ -150,14 +152,28 @@ export const isMinioConfigured = Boolean(
  * Parse the endpoint URL for S3 client configuration
  * Handles URLs with ports correctly (url.host includes port)
  */
-function parseEndpoint(endpoint: string) {
+function parseEndpoint(endpoint: string, stripPort = false) {
 	try {
 		const url = new URL(endpoint);
-		// url.host includes both hostname and port (e.g., "example.com:9000")
-		return {
-			endpoint: `${url.protocol}//${url.host}`,
-			forcePathStyle: true, // Required for Minio (uses path-style: /bucket/key instead of bucket.s3.amazonaws.com/key)
-		};
+		// For Railway public URLs, don't include port (Railway handles routing)
+		// For S3 client, we need the port if it's specified
+		const isRailwayPublicUrl = url.hostname.includes('railway.app');
+		const shouldStripPort = stripPort || isRailwayPublicUrl;
+		
+		if (shouldStripPort) {
+			// Return URL without port (for public file URLs)
+			return {
+				endpoint: `${url.protocol}//${url.hostname}`,
+				forcePathStyle: true,
+			};
+		} else {
+			// Return URL with port (for S3 client configuration)
+			// url.host includes both hostname and port (e.g., "example.com:9000")
+			return {
+				endpoint: `${url.protocol}//${url.host}`,
+				forcePathStyle: true, // Required for Minio (uses path-style: /bucket/key instead of bucket.s3.amazonaws.com/key)
+			};
+		}
 	} catch {
 		// If it's not a full URL, assume it's just a host
 		return {
@@ -213,8 +229,7 @@ export async function getS3Client() {
 				secretAccessKey: env.MINIMO_ACCESS_SECRET!,
 			},
 			forcePathStyle: true, // Required for Minio - uses path-style URLs
-			// Note: AWS SDK v3 handles timeouts internally, but Railway networking
-			// might require using internal service names instead of public URLs
+			// Note: Timeouts are handled via Promise.race wrapper in individual functions
 		});
 	}
 	
@@ -247,18 +262,24 @@ export async function uploadFile(
 	await client.send(command);
 
 	// Return direct Minio URL for better compatibility with Next.js Image optimization
-	// Use proxy only if filename has special characters
+	// In production, prefer direct URLs to avoid proxy timeouts
 	const hasSpecialChars = /[^a-zA-Z0-9._-]/.test(filename);
+	const publicUrl = getPublicUrl();
+	const useDirectUrl = !hasSpecialChars && publicUrl && process.env.NODE_ENV === 'production';
 	
-	if (hasSpecialChars) {
+	if (useDirectUrl) {
+		// Use direct URL in production for better reliability
+		const { endpoint } = parseEndpoint(publicUrl);
+		return `${endpoint}/${bucketName}/${encodeURIComponent(filename)}`;
+	} else if (hasSpecialChars) {
 		// Use proxy for files with special characters
 		return `/api/media-alt/${encodeURIComponent(filename)}`;
 	} else {
-		// Use direct URL for simple filenames
-		const publicUrl = getPublicUrl();
+		// Use direct URL if available, otherwise proxy
 		if (publicUrl) {
-			const { endpoint } = parseEndpoint(publicUrl);
-			return `${endpoint}/${bucketName}/${filename}`;
+			// Strip port for public URLs (Railway handles routing)
+			const { endpoint } = parseEndpoint(publicUrl, true);
+			return `${endpoint}/${bucketName}/${encodeURIComponent(filename)}`;
 		} else {
 			// Fallback to proxy if no public URL
 			return `/api/media-alt/${encodeURIComponent(filename)}`;
@@ -293,21 +314,30 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 
 		return (response.Contents ?? []).map((item) => {
 			const filename = item.Key ?? "";
-			// Use proxy endpoint for files with special characters, direct URL for simple filenames
-			// This helps Next.js Image optimization work better
-			const hasSpecialChars = /[^a-zA-Z0-9._-]/.test(filename);
-			let url: string;
+			const publicUrl = getPublicUrl();
 			
-			if (hasSpecialChars) {
+			// In production, prefer direct URLs to avoid proxy timeouts
+			// Only use proxy if filename has special characters that need encoding
+			const hasSpecialChars = /[^a-zA-Z0-9._-]/.test(filename);
+			const useDirectUrl = !hasSpecialChars && publicUrl && process.env.NODE_ENV === 'production';
+			
+			let url: string;
+			if (useDirectUrl) {
+				// Use direct Minio URL in production for better reliability
+				const { endpoint } = parseEndpoint(publicUrl);
+				url = `${endpoint}/${bucketName}/${encodeURIComponent(filename)}`;
+				console.log(`[MinIO] Using direct URL for "${filename}" in production`);
+			} else if (hasSpecialChars) {
 				// Use proxy for files with special characters (spaces, unicode, etc.)
 				const encodedFilename = encodeURIComponent(filename);
 				url = `/api/media-alt/${encodedFilename}`;
+				console.log(`[MinIO] Using proxy URL for "${filename}" (has special characters)`);
 			} else {
-				// Use direct Minio URL for simple filenames (works better with Next.js Image)
-				const publicUrl = getPublicUrl();
+				// Use direct URL if available, otherwise proxy
 				if (publicUrl) {
-					const { endpoint } = parseEndpoint(publicUrl);
-					url = `${endpoint}/${bucketName}/${filename}`;
+					// Strip port for public URLs (Railway handles routing)
+					const { endpoint } = parseEndpoint(publicUrl, true);
+					url = `${endpoint}/${bucketName}/${encodeURIComponent(filename)}`;
 				} else {
 					// Fallback to proxy if no public URL
 					const encodedFilename = encodeURIComponent(filename);
