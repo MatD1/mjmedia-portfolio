@@ -121,17 +121,19 @@ function getApiEndpoint(): string | null {
 }
 
 /**
- * Get the public URL for file access (should use API endpoint for direct file access)
+ * Get the public URL for file access
+ * Returns the console URL (MINIMO_URL) for public file access
+ * The console URL is typically what Railway exposes for public file serving
  */
 function getPublicUrl(): string | null {
-	// For file access, use the API endpoint (bucket URL), not the console URL
+	// Use console URL for public file access (Railway typically exposes this)
+	if (env.MINIMO_URL) {
+		return env.MINIMO_URL;
+	}
+	// Fallback to API endpoint if no console URL
 	const apiEndpoint = getApiEndpoint();
 	if (apiEndpoint) {
 		return apiEndpoint;
-	}
-	// Fallback to console URL if no API endpoint
-	if (env.MINIMO_URL) {
-		return env.MINIMO_URL;
 	}
 	return null;
 }
@@ -244,8 +246,24 @@ export async function uploadFile(
 
 	await client.send(command);
 
-	// Return the alternative proxy URL that handles special characters better
-	return `/api/media-alt/${encodeURIComponent(filename)}`;
+	// Return direct Minio URL for better compatibility with Next.js Image optimization
+	// Use proxy only if filename has special characters
+	const hasSpecialChars = /[^a-zA-Z0-9._-]/.test(filename);
+	
+	if (hasSpecialChars) {
+		// Use proxy for files with special characters
+		return `/api/media-alt/${encodeURIComponent(filename)}`;
+	} else {
+		// Use direct URL for simple filenames
+		const publicUrl = getPublicUrl();
+		if (publicUrl) {
+			const { endpoint } = parseEndpoint(publicUrl);
+			return `${endpoint}/${bucketName}/${filename}`;
+		} else {
+			// Fallback to proxy if no public URL
+			return `/api/media-alt/${encodeURIComponent(filename)}`;
+		}
+	}
 }
 
 /**
@@ -275,10 +293,28 @@ export async function listFiles(): Promise<Array<{ filename: string; url: string
 
 		return (response.Contents ?? []).map((item) => {
 			const filename = item.Key ?? "";
-			// Use the alternative proxy endpoint that handles special characters better
-			const encodedFilename = encodeURIComponent(filename);
-			const url = `/api/media-alt/${encodedFilename}`;
-			console.log(`[MinIO] Generated proxied URL for "${filename}": ${url}`); // Debug logging
+			// Use proxy endpoint for files with special characters, direct URL for simple filenames
+			// This helps Next.js Image optimization work better
+			const hasSpecialChars = /[^a-zA-Z0-9._-]/.test(filename);
+			let url: string;
+			
+			if (hasSpecialChars) {
+				// Use proxy for files with special characters (spaces, unicode, etc.)
+				const encodedFilename = encodeURIComponent(filename);
+				url = `/api/media-alt/${encodedFilename}`;
+			} else {
+				// Use direct Minio URL for simple filenames (works better with Next.js Image)
+				const publicUrl = getPublicUrl();
+				if (publicUrl) {
+					const { endpoint } = parseEndpoint(publicUrl);
+					url = `${endpoint}/${bucketName}/${filename}`;
+				} else {
+					// Fallback to proxy if no public URL
+					const encodedFilename = encodeURIComponent(filename);
+					url = `/api/media-alt/${encodedFilename}`;
+				}
+			}
+			
 			return {
 				filename,
 				url,

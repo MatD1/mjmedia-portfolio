@@ -1,23 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getS3Client, bucketName } from '~/server/storage';
 
-export async function GET(request: NextRequest) {
+export const runtime = 'nodejs';
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ filename: string[] }> }
+) {
   try {
-    // Extract filename from URL path
-    const url = new URL(request.url);
-    const pathParts = url.pathname.split('/');
-    const encodedFilename = pathParts[pathParts.length - 1]; // Get the last part
+    // Await params in Next.js 15+
+    const params = await context.params;
     
-    if (!encodedFilename) {
-      console.error('[Media Proxy Alt] No filename in path:', url.pathname);
+    // Handle catch-all route - filename is an array of path segments
+    const filenameParts = params.filename;
+    
+    if (!filenameParts || filenameParts.length === 0) {
+      console.error('[Media Proxy Alt] No filename in path');
       return new NextResponse('Filename is required', { status: 400 });
     }
 
-    // Decode the filename
-    const filename = decodeURIComponent(encodedFilename);
+    // Join the filename parts and decode (handles multiple segments and special characters)
+    const encodedFilename = filenameParts.join('/');
+    let filename: string;
     
-    console.log(`[Media Proxy Alt] URL: ${request.url}`);
-    console.log(`[Media Proxy Alt] Path: ${url.pathname}`);
+    try {
+      // Decode the filename - may need multiple passes if double-encoded
+      filename = decodeURIComponent(encodedFilename);
+      // If still encoded (contains %), try decoding again (handles double-encoding)
+      if (filename.includes('%')) {
+        try {
+          filename = decodeURIComponent(filename);
+        } catch {
+          // If second decode fails, use first decode result
+        }
+      }
+    } catch (decodeError) {
+      // If decoding fails, use the original
+      console.warn('[Media Proxy Alt] Decode error, using original:', decodeError);
+      filename = encodedFilename;
+    }
+    
+    console.log(`[Media Proxy Alt] Request URL: ${request.url}`);
+    console.log(`[Media Proxy Alt] Filename parts:`, filenameParts);
     console.log(`[Media Proxy Alt] Encoded filename: "${encodedFilename}"`);
     console.log(`[Media Proxy Alt] Decoded filename: "${filename}"`);
 
@@ -47,16 +71,42 @@ export async function GET(request: NextRequest) {
     }
 
     // Convert stream to buffer
-    const chunks: Uint8Array[] = [];
-    const reader = response.Body.transformToWebStream().getReader();
+    // Handle both Readable and ReadableStream
+    let buffer: Buffer;
+    if (response.Body instanceof ReadableStream) {
+      const chunks: Uint8Array[] = [];
+      const reader = response.Body.getReader();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+
+      buffer = Buffer.concat(chunks);
+    } else if (response.Body && typeof (response.Body as any).transformToWebStream === 'function') {
+      // AWS SDK v3 style
+      const chunks: Uint8Array[] = [];
+      const reader = (response.Body as any).transformToWebStream().getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+
+      buffer = Buffer.concat(chunks);
+    } else {
+      // Fallback: try to read as buffer directly
+      const stream = response.Body as any;
+      const chunks: Buffer[] = [];
+      
+      for await (const chunk of stream) {
+        chunks.push(Buffer.from(chunk));
+      }
+      
+      buffer = Buffer.concat(chunks);
     }
-
-    const buffer = Buffer.concat(chunks);
 
     // Determine content type from filename if not provided by S3
     let contentType = response.ContentType || 'application/octet-stream';
@@ -89,16 +139,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log(`[Media Proxy Alt] Successfully serving "${filename}" (${contentType})`);
+    console.log(`[Media Proxy Alt] Successfully serving "${filename}" (${contentType}, ${buffer.length} bytes)`);
 
-    // Return the file with proper headers
+    // Return the file with proper headers for Next.js Image optimization
     return new NextResponse(buffer, {
+      status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Content-Length': buffer.length.toString(),
+        'Cache-Control': 'public, max-age=31536000, immutable', // Cache for 1 year
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET',
         'Access-Control-Allow-Headers': 'Content-Type',
+        // Important: Ensure Next.js Image optimization recognizes this as an image
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch (error) {
