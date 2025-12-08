@@ -142,7 +142,8 @@ export async function GET(
     console.log(`[Media Proxy Alt] Successfully serving "${filename}" (${contentType}, ${buffer.length} bytes)`);
 
     // Return the file with proper headers for Next.js Image optimization
-    return new NextResponse(buffer, {
+    // NextResponse accepts Buffer, but TypeScript needs explicit typing
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         'Content-Type': contentType,
